@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { buildArena, resolveCollisions, ARENA } from './arena.js';
-import { createShaba } from '../characters/shaba.js';
 import { createDummy } from '../characters/dummy.js';
 import { createFighter } from './fighter.js';
-import { createShabaKit, SHABA } from './kits/shaba.js';
+import { heroById } from './heroes.js';
 import { createOverlay } from './overlay.js';
+import { createProjectiles, nearestEnemy } from './combat.js';
+import { createEffects } from './effects.js';
 
 // ============================================================
 // ИГРОВОЙ ЦИКЛ — вне React, чтобы не пересоздавать сцену на каждый рендер.
@@ -16,7 +17,9 @@ const DUMMY_SPAWN = { x: -2.2, z: 7.5, facing: 0 };
 
 const CAM_OFFSET = new THREE.Vector3(0, 14.5, 9.5);
 
-export function createGame(mount, input, onHud) {
+export function createGame(mount, input, onHud, heroId) {
+  const hero = heroById(heroId);
+
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x9fb4c8);
   scene.fog = new THREE.Fog(0x9fb4c8, 30, 60);
@@ -57,8 +60,8 @@ export function createGame(mount, input, onHud) {
   buildArena(scene);
 
   // ---- бойцы ----
-  const player = createFighter({ name: 'Шаба', team: 'blue', model: createShaba(), maxHp: SHABA.maxHp, spawn: PLAYER_SPAWN });
-  const kit = createShabaKit(player);
+  const player = createFighter({ name: hero.name, team: 'blue', model: hero.createModel(), maxHp: hero.stats.maxHp, spawn: PLAYER_SPAWN });
+  const kit = hero.createKit(player);
   player.stride = 0;
   player.moving = false;
 
@@ -69,13 +72,57 @@ export function createGame(mount, input, onHud) {
   for (const f of fighters) f.addTo(scene);
 
   const overlay = createOverlay(mount);
+  const projectiles = createProjectiles(scene);
+  const fx = createEffects(scene);
 
   const world = {
     fighters,
+    projectiles,
+    fx,
     damage(target, amount, from, kind) {
       const dealt = target.takeDamage(amount, from);
       if (dealt > 0) overlay.spawnNumber(target, dealt, target === player ? 'taken' : kind);
+      return dealt;
     },
+    say(f, text) { overlay.spawnNumber(f, text, 'text'); },
+  };
+
+  // ---- круги на земле: прицел ульты, дальность ульты, зона вращения ----
+  const groundRing = (color, opacity) => {
+    const m = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 1, 48),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 0.06;
+    m.visible = false;
+    scene.add(m);
+    return m;
+  };
+  const aimRing = groundRing(0xffc23a, 0.9);
+  const aimFill = new THREE.Mesh(
+    new THREE.CircleGeometry(1, 40),
+    new THREE.MeshBasicMaterial({ color: 0xffc23a, transparent: true, opacity: 0.22, depthWrite: false })
+  );
+  aimFill.rotation.x = -Math.PI / 2;
+  aimFill.position.y = 0.055;
+  aimFill.visible = false;
+  scene.add(aimFill);
+  const rangeRing = groundRing(0xffffff, 0.35);
+  const auraRing = groundRing(0xff5a5f, 0.7);
+
+  // точка ульты по оттяжке кнопки: (dx, dy) — вектор −1..1, экранный низ = +Z.
+  // короткое касание без оттяжки — в ближайшего врага в радиусе, иначе перед собой
+  const ultPoint = (dx, dy) => {
+    const mag = Math.hypot(dx, dy);
+    if (mag < 0.2) {
+      const tgt = nearestEnemy(player, world, kit.ultRange);
+      if (tgt) return { x: tgt.pos.x, z: tgt.pos.z };
+      const r = kit.ultRange * 0.5;
+      return { x: player.pos.x + Math.sin(player.facing) * r, z: player.pos.z + Math.cos(player.facing) * r };
+    }
+    const k = Math.min(1, mag) / mag;
+    return { x: player.pos.x + dx * k * kit.ultRange, z: player.pos.z + dy * k * kit.ultRange };
   };
 
   // бойцы не проходят друг сквозь друга; неподвижных толкать нельзя
@@ -116,7 +163,16 @@ export function createGame(mount, input, onHud) {
   const step = (dt, t) => {
     // --- кнопки ---
     if (input.attack) { input.attack = false; kit.attack(); }
-    if (input.ult) { input.ult = false; kit.ult(); }
+    if (input.ult) {
+      // тап по ульте (или K на клавиатуре); прицельной ульте — автоцель
+      input.ult = false;
+      kit.ult(kit.ultAim === 'drag' ? ultPoint(0, 0) : null, world);
+    }
+    if (input.ultFire) {
+      const { dx, dy } = input.ultFire;
+      input.ultFire = null;
+      kit.ult(ultPoint(dx, dy), world);
+    }
     if (input.selfHit) { input.selfHit = false; world.damage(player, 1000, null, 'taken'); }
 
     // --- движение игрока ---
@@ -128,7 +184,7 @@ export function createGame(mount, input, onHud) {
     player.moving = mag > 0.12 && player.canAct() && !kit.busy;
     const before = player.pos.clone();
     if (player.moving) {
-      const speed = SHABA.speed * kit.speedMul;
+      const speed = hero.stats.speed * kit.speedMul * player.moveMul();
       player.pos.x += mx * speed * mag * dt;
       player.pos.z += mz * speed * mag * dt;
       // плавный поворот к направлению движения
@@ -137,16 +193,40 @@ export function createGame(mount, input, onHud) {
     }
 
     kit.update(dt, world);
+    if (kit.forcedMoving != null) player.moving = kit.forcedMoving;
 
     // --- столкновения ---
     separate();
     for (const f of fighters) if (f.alive && !f.grabbedBy) resolveCollisions(f.pos, f.radius);
-    player.stride += before.distanceTo(player.pos) * (kit.speedMul > 1 ? 1.35 : 1.65);
+    player.stride += before.distanceTo(player.pos) * hero.stride / (kit.speedMul > 1.3 ? 1.22 : 1);
+
+    projectiles.update(dt, world);
+    fx.update(dt);
 
     // --- модели ---
     player.model.animate({ t, stride: player.stride, moving: player.moving, ...kit.pose() });
     dummy.model.animate({ t });
     for (const f of fighters) f.updateView(dt);
+
+    // --- круги на земле ---
+    const aiming = kit.ultAim === 'drag' && input.ultAim?.active && player.alive;
+    aimRing.visible = aimFill.visible = rangeRing.visible = !!aiming;
+    if (aiming) {
+      const p = ultPoint(input.ultAim.dx, input.ultAim.dy);
+      aimRing.position.set(p.x, 0.06, p.z);
+      aimFill.position.set(p.x, 0.055, p.z);
+      aimRing.scale.setScalar(kit.ultRadius);
+      aimFill.scale.setScalar(kit.ultRadius);
+      rangeRing.position.set(player.pos.x, 0.06, player.pos.z);
+      rangeRing.scale.setScalar(kit.ultRange);
+    }
+    const aura = player.alive ? kit.aura ?? 0 : 0;
+    auraRing.visible = aura > 0;
+    if (aura > 0) {
+      auraRing.position.set(player.pos.x, 0.06, player.pos.z);
+      auraRing.scale.setScalar(aura);
+      auraRing.rotation.z = t * 4;
+    }
 
     updateCamera(dt);
     overlay.update(dt, camera, fighters);
@@ -159,10 +239,12 @@ export function createGame(mount, input, onHud) {
       const hud = {
         ...k,
         ultCd: Math.ceil(k.ultCd * 10) / 10,
+        special: k.combo >= 2,
+        ultAim: kit.ultAim,
         dead: !player.alive,
         respawnIn: Math.ceil(player.respawnIn),
       };
-      const key = `${hud.ultCd}|${hud.ultActive}|${hud.combo}|${hud.grabbing}|${hud.dead}|${hud.respawnIn}`;
+      const key = JSON.stringify(hud);
       if (key !== lastHud) { lastHud = key; onHud?.(hud); }
     }
   };
@@ -177,10 +259,12 @@ export function createGame(mount, input, onHud) {
 
   return {
     fighters,
+    hero,
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
       overlay.dispose();
+      projectiles.clear();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         if (o.material) o.material.dispose();

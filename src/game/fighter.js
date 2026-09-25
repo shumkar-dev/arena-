@@ -17,8 +17,10 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
   wrapper.add(model.root);
 
   // уникальные материалы модели — для белой вспышки при попадании
-  const mats = new Set();
-  model.root.traverse((o) => { if (o.material) mats.add(o.material); });
+  // (запоминаем собственное свечение материала — у сопел Изюма и глаз Смитаны оно есть)
+  const matSet = new Set();
+  model.root.traverse((o) => { if (o.material) matSet.add(o.material); });
+  const mats = [...matSet].map((m) => ({ m, base: m.emissive.clone() }));
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.62, 0.78, 32),
@@ -49,8 +51,13 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     flinch: 0,
     hitDir: new THREE.Vector2(0, 1),
     grabbedBy: null,         // кто держит этого бойца
-    lastHitAt: -Infinity,
+    effects: {},             // статусы: имя → { t — сколько осталось, ...данные }
   };
+
+  // статусы: slow { mul } — замедление, frenzy — ускоренная атака и т. п.
+  f.addEffect = (name, t, data = {}) => { f.effects[name] = { ...data, t }; };
+  f.hasEffect = (name) => (f.effects[name]?.t ?? 0) > 0;
+  f.moveMul = () => (f.hasEffect('slow') ? f.effects.slow.mul : 1);
 
   f.canAct = () => f.alive && !f.grabbedBy;
 
@@ -72,6 +79,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
       f.respawnIn = RESPAWN_TIME;
       f.grabbedBy = null;
       f.lift = 0;
+      f.effects = {};
     }
     return dealt;
   };
@@ -85,6 +93,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     f.flash = 0;
     f.flinch = 0;
     f.grabbedBy = null;
+    f.effects = {};
     wrapper.visible = true;
     ring.visible = true;
   };
@@ -108,13 +117,19 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
       if (f.deathT > DEATH_HIDE) { wrapper.visible = false; ring.visible = false; }
       if (f.respawnIn <= 0) f.respawn();
     } else {
+      for (const k in f.effects) {
+        f.effects[k].t -= dt;
+        if (f.effects[k].t <= 0) delete f.effects[k];
+      }
       f.flinch = Math.max(0, f.flinch - dt * 6);
       tilt(Math.sin(f.flinch * Math.PI) * 0.28);
       model.root.position.y = f.lift;
     }
 
     f.flash = Math.max(0, f.flash - dt * 7);
-    for (const m of mats) m.emissive.setScalar(f.flash * 0.6);
+    const slow = f.hasEffect('slow') ? 0.25 : 0;
+    const w = f.flash * 0.6;
+    for (const { m, base } of mats) m.emissive.setRGB(base.r + w, base.g + w + slow * 0.6, base.b + w + slow);
 
     wrapper.position.copy(f.pos);
     wrapper.rotation.y = f.facing;

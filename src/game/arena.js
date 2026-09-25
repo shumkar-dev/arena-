@@ -171,3 +171,13 @@ export function resolveCollisions(p, r) {
   p.x = Math.max(-halfW + r, Math.min(halfW - r, p.x));
   p.z = Math.max(-halfL + r, Math.min(halfL - r, p.z));
 }
+
+// Упирается ли точка (x, z) с радиусом r в укрытие или край арены — для снарядов.
+export function pointBlocked(x, z, r = 0) {
+  const { halfW, halfL } = ARENA;
+  if (Math.abs(x) > halfW - r || Math.abs(z) > halfL - r) return true;
+  for (const o of OBSTACLES) {
+    if (x > o.minX - r && x < o.maxX + r && z > o.minZ - r && z < o.maxZ + r) return true;
+  }
+  return false;
+}

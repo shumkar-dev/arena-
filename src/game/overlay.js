@@ -7,6 +7,7 @@ import * as THREE from 'three';
 // ============================================================
 
 const NUMBER_LIFE = 0.9;
+const STATUS_ICONS = { slow: '🐌', frenzy: '⚡' };
 const v = new THREE.Vector3();
 
 export function createOverlay(mount) {
@@ -22,10 +23,10 @@ export function createOverlay(mount) {
     if (!b) {
       const el = document.createElement('div');
       el.className = `hpbar ${f.team === 'blue' ? 'ally' : 'enemy'}`;
-      el.innerHTML = `<div class="hpbar-name"></div><div class="hpbar-track"><div class="hpbar-fill"></div><div class="hpbar-text"></div></div>`;
-      el.querySelector('.hpbar-name').textContent = f.name;
+      el.innerHTML = `<div class="hpbar-name"><span class="hpbar-status"></span><span class="hpbar-label"></span></div><div class="hpbar-track"><div class="hpbar-fill"></div><div class="hpbar-text"></div></div>`;
+      el.querySelector('.hpbar-label').textContent = f.name;
       root.appendChild(el);
-      b = { el, fill: el.querySelector('.hpbar-fill'), text: el.querySelector('.hpbar-text'), lastHp: -1 };
+      b = { el, fill: el.querySelector('.hpbar-fill'), text: el.querySelector('.hpbar-text'), status: el.querySelector('.hpbar-status'), lastHp: -1, lastStatus: '' };
       bars.set(f.id, b);
     }
     return b;
@@ -39,6 +40,7 @@ export function createOverlay(mount) {
   };
 
   return {
+    // kind: hit | grab | taken | text
     spawnNumber(f, amount, kind) {
       const el = document.createElement('div');
       el.className = `dmg dmg-${kind}`;
@@ -56,6 +58,8 @@ export function createOverlay(mount) {
         if (!p) { b.el.style.display = 'none'; continue; }
         b.el.style.display = '';
         b.el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`;
+        const status = Object.keys(f.effects).map((k) => STATUS_ICONS[k] ?? '').join('');
+        if (status !== b.lastStatus) { b.lastStatus = status; b.status.textContent = status; }
         if (b.lastHp !== f.hp) {
           b.lastHp = f.hp;
           b.fill.style.width = `${(f.hp / f.maxHp) * 100}%`;
