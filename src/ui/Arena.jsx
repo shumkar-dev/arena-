@@ -64,6 +64,7 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
           {score?.map((s, i) => (
             <React.Fragment key={i}>
               {i > 0 && <span className="score-sep">{s.sep ?? ':'}</span>}
+              {s.icon && <span className="score-icon">{s.icon}</span>}
               <span className={`score-val score-${s.side}`}>{s.value}</span>
             </React.Fragment>
           ))}

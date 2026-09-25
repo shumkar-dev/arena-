@@ -317,6 +317,17 @@ const SOUNDS = {
     noise({ f0: 900, f1: 90, dur: 0.75, gain: 0.5, rev: 0.4 });
     tone({ type: 'sawtooth', f0: 150, f1: 55, dur: 0.9, gain: 0.14, lp: 500, rev: 0.4, delay: 0.05 });
   },
+  pickup() {                        // подобрал предмет: мягкий «вжух» и звон
+    noise({ filter: 'bandpass', f0: 600, f1: 2600, q: 2, dur: 0.22, att: 0.05, gain: 0.25, rev: 0.2 });
+    tone({ type: 'triangle', f0: 660, f1: 990, dur: 0.3, gain: 0.12, lp: 2500, rev: 0.4, delay: 0.05 });
+  },
+  glass() {                         // разбилась бутылка: глухой удар, звон осколков, плеск
+    thump({ f0: 140, f1: 45, dur: 0.35, gain: 0.9, rev: 0.3 });
+    for (let i = 0; i < 6; i++) {
+      noise({ filter: 'bandpass', f0: 3000 + i * 700, q: 8, dur: 0.12 + i * 0.03, gain: 0.18, delay: 0.02 + i * 0.045, rev: 0.4 });
+    }
+    noise({ f0: 900, f1: 200, dur: 0.5, gain: 0.35, delay: 0.08, rev: 0.3 });
+  },
   victory() {                       // победа: тёплый восходящий аккорд с хвостом
     [262, 330, 392, 523].forEach((f, i) => tone({ type: 'triangle', f0: f, dur: 1.4, att: 0.04, gain: 0.13, lp: 2200, delay: i * 0.09, rev: 0.6 }));
     thump({ f0: 110, f1: 55, dur: 0.4, gain: 0.7, rev: 0.3 });

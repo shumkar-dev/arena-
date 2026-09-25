@@ -23,7 +23,8 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
   // уникальные материалы модели — для белой вспышки при попадании
   // (запоминаем собственное свечение материала — у сопел Изюма и глаз Смитаны оно есть)
   const matSet = new Set();
-  model.root.traverse((o) => { if (o.material) matSet.add(o.material); });
+  // у меша может быть массив материалов (этикетка бутылки), а у простых материалов нет свечения
+  model.root.traverse((o) => { for (const m of [].concat(o.material ?? [])) if (m.emissive) matSet.add(m); });
   const mats = [...matSet].map((m) => ({ m, base: m.emissive.clone() }));
 
   const ring = new THREE.Mesh(
@@ -67,6 +68,14 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
   f.moveMul = () => (f.hasEffect('slow') ? f.effects.slow.mul : 1);
 
   f.canAct = () => f.alive && !f.grabbedBy;
+
+  // лечение (аптечка); вернёт, сколько реально восстановлено
+  f.heal = (amount) => {
+    if (!f.alive) return 0;
+    const h = Math.min(f.maxHp - f.hp, Math.round(amount));
+    f.hp += h;
+    return h;
+  };
 
   // amount — урон; from — атакующий (для направления отшатывания)
   f.takeDamage = (amount, from) => {

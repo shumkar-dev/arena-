@@ -7,7 +7,7 @@ import * as THREE from 'three';
 // ============================================================
 
 const NUMBER_LIFE = 0.9;
-const STATUS_ICONS = { slow: '🐌', frenzy: '⚡' };
+const STATUS_ICONS = { slow: '🐌', frenzy: '⚡', cig: '🚬' };
 const v = new THREE.Vector3();
 
 export function createOverlay(mount) {
