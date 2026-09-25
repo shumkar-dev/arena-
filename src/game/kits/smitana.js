@@ -1,10 +1,12 @@
 import * as THREE from 'three';
-import { createChain, nearestEnemy, faceTowards, enemiesInRadius } from '../combat.js';
+import { createChain, aimAttack, enemiesInCone, lineClear } from '../combat.js';
 
 // ============================================================
 // ПРИЁМЫ СМИТАНЫ
 // Атака — сметана, средняя дальность. Третья — сметана, которая замедляет на 3 с.
-// Ульта — крутится на мотоцикле 5 с и бьёт всех вокруг.
+// Ульта — сметанамёт: 3 с густая струя конусом перед собой, урон всем в конусе
+// каждые 0,3 с. Можно двигаться; струя смотрит туда же, куда Смитана, а оттяжкой
+// кнопки атаки её можно развернуть. Укрытия струю гасят.
 // ============================================================
 
 export const SMITANA = {
@@ -20,12 +22,13 @@ export const SMITANA = {
   autoAim: 8,
   slowMul: 0.55,         // скорость замедленного врага
   slowTime: 3,
-  ultDuration: 5,
+  ultDuration: 3,
   ultCooldown: 20,
-  spinRadius: 2.4,
-  spinTick: 0.5,
-  spinDamage: 260,
-  spinSpeedMul: 1.15,
+  sprayReach: 4.6,       // досягаемость струи сверх радиусов
+  sprayArc: 0.42,        // ±рад — ширина конуса
+  sprayTick: 0.3,
+  sprayDamage: 220,
+  sprayMoveMul: 0.8,     // со сметанамётом в руках бежит чуть медленнее
 };
 
 const creamMat = new THREE.MeshStandardMaterial({ color: 0xfaf8f0, roughness: 0.35 });
@@ -48,7 +51,7 @@ export function createSmitanaKit(me) {
   const chain = createChain();
   const s = {
     throwT: -1, side: 1, released: false, special: false,
-    ultT: 0, ultCd: 0, tickT: 0,
+    ultT: 0, ultCd: 0, tickT: 0, stream: null,
   };
 
   const fire = (world) => {
@@ -69,42 +72,67 @@ export function createSmitanaKit(me) {
       onHit(target, p) {
         world.damage(target, T.shotDamage, me, 'hit');
         world.fx.splat(p.x, p.z, special ? 1.1 : 0.6);
+        world.sfx(special ? 'boing' : 'splat');
         if (special) target.addEffect('slow', T.slowTime, { mul: T.slowMul });
         else chain.hit();
       },
       onEnd(p) {
         world.fx.splat(p.x, p.z, 0.5);
+        world.sfx('splat');
         if (!special) chain.miss();
       },
     });
     if (special) chain.consume();
   };
 
-  return {
-    ultAim: 'tap',
+  const stopStream = () => { s.stream?.stop(); s.stream = null; };
+
+  const kit = {
+    ultAim: 'drag',
+    ultRange: T.sprayReach,
+    ultAutoRange: 8,       // короткое касание ульты разворачивает струю к врагу в этом радиусе
+    // форма прицела ульты: конус струи в выбранную сторону
+    ultShape: { type: 'cone', reach: me.radius + T.sprayReach, arc: T.sprayArc },
     get busy() { return false; },
-    get speedMul() { return s.ultT > 0 ? T.spinSpeedMul : 1; },
+    get speedMul() { return s.ultT > 0 ? T.sprayMoveMul : 1; },
 
-    attack() { chain.press(); },
+    attack(dir) {
+      // во время ульты кнопка атаки только разворачивает струю
+      if (s.ultT > 0) { if (dir) me.facing = Math.atan2(dir.x, dir.z); return; }
+      chain.press(dir);
+    },
+    // форма прицела атаки: линия полёта сметаны; во время ульты — конус струи
+    attackShape() {
+      if (s.ultT > 0) return kit.ultShape;
+      return { type: 'line', length: T.shotRange, width: (chain.special ? T.shotRadius * 1.4 : T.shotRadius) * 2 };
+    },
+    // пока бьёт струя — её конус виден на земле
+    activeArea() { return s.ultT > 0 ? kit.ultShape : null; },
 
-    ult() {
+    // aim — { x, z } точка на земле; нужна только сторона струи
+    ult(aim, world) {
       if (!me.canAct() || s.ultCd > 0) return;
+      if (aim) me.facing = Math.atan2(aim.x - me.pos.x, aim.z - me.pos.z);
       s.ultT = T.ultDuration;
       s.ultCd = T.ultCooldown;
       s.tickT = 0;
       s.throwT = -1;
+      chain.clear();
+      stopStream();
+      s.stream = world.fx.stream();
+      world.sfx('sprayStart');
     },
 
     update(dt, world) {
       s.ultCd = Math.max(0, s.ultCd - dt);
       s.ultT = Math.max(0, s.ultT - dt);
-      if (!me.alive) { s.ultT = 0; s.throwT = -1; chain.clear(); return; }
+      if (!me.alive) { s.ultT = 0; s.throwT = -1; chain.clear(); }
+      if (s.ultT <= 0 && s.stream) { stopStream(); world.sfx('sprayStop'); }
+      if (!me.alive) return;
 
-      // на мотоцикле не стреляет — только крутится
       const free = s.throwT < 0 && s.ultT <= 0 && me.canAct();
       if (chain.tick(dt, free)) {
-        const tgt = nearestEnemy(me, world, T.autoAim);
-        if (tgt) faceTowards(me, tgt.pos.x, tgt.pos.z);
+        aimAttack(me, world, chain.dir, T.autoAim);
         s.throwT = 0;
         s.released = false;
         s.special = chain.special;
@@ -114,16 +142,20 @@ export function createSmitanaKit(me) {
 
       if (s.throwT >= 0) {
         s.throwT += dt / T.throwTime;
-        if (!s.released && s.throwT >= T.releaseAt) { s.released = true; fire(world); }
+        if (!s.released && s.throwT >= T.releaseAt) { s.released = true; fire(world); world.sfx('throw'); }
         if (s.throwT >= 1) s.throwT = -1;
       }
 
       if (s.ultT > 0) {
+        // струя из ладоней, по направлению взгляда
+        const fx = Math.sin(me.facing), fz = Math.cos(me.facing);
+        const nx = me.pos.x + fx * 0.95, nz = me.pos.z + fz * 0.95;
+        s.stream.emit(nx, 2.0, nz, me.facing, T.sprayArc, me.radius + T.sprayReach, dt);
         s.tickT -= dt;
         if (s.tickT <= 0) {
-          s.tickT += T.spinTick;
-          for (const e of enemiesInRadius(me, world, me.pos.x, me.pos.z, T.spinRadius)) {
-            world.damage(e, T.spinDamage, me, 'hit');
+          s.tickT += T.sprayTick;
+          for (const e of enemiesInCone(me, world, T.sprayReach, T.sprayArc)) {
+            if (lineClear(me.pos.x, me.pos.z, e.pos.x, e.pos.z)) world.damage(e, T.sprayDamage, me, 'hit');
           }
         }
       }
@@ -131,7 +163,7 @@ export function createSmitanaKit(me) {
 
     pose() {
       return {
-        spin: s.ultT > 0,
+        spray: s.ultT > 0,
         throw: s.throwT >= 0 ? Math.min(1, s.throwT) : null,
         throwSide: s.side,
       };
@@ -143,11 +175,9 @@ export function createSmitanaKit(me) {
         ultCd: s.ultCd,
         ultFrac: s.ultCd / T.ultCooldown,
         ultActive: s.ultT > 0,
-        attackLocked: s.ultT > 0,
+        steer: s.ultT > 0,
       };
     },
-
-    // круг, который бьёт вращение, — движок рисует его под героем
-    get aura() { return s.ultT > 0 ? T.spinRadius : 0; },
   };
+  return kit;
 }

@@ -6,6 +6,8 @@ import { heroById } from './heroes.js';
 import { createOverlay } from './overlay.js';
 import { createProjectiles, nearestEnemy } from './combat.js';
 import { createEffects } from './effects.js';
+import { createAim } from './aim.js';
+import { sound } from './sound.js';
 
 // ============================================================
 // ИГРОВОЙ ЦИКЛ — вне React, чтобы не пересоздавать сцену на каждый рендер.
@@ -82,41 +84,28 @@ export function createGame(mount, input, onHud, heroId) {
     damage(target, amount, from, kind) {
       const dealt = target.takeDamage(amount, from);
       if (dealt > 0) overlay.spawnNumber(target, dealt, target === player ? 'taken' : kind);
+      if (dealt > 0 && target === player) sound.play('hurt');
       return dealt;
     },
     say(f, text) { overlay.spawnNumber(f, text, 'text'); },
+    sfx(name, opts) { sound.play(name, opts); },
   };
 
-  // ---- круги на земле: прицел ульты, дальность ульты, зона вращения ----
-  const groundRing = (color, opacity) => {
-    const m = new THREE.Mesh(
-      new THREE.RingGeometry(0.9, 1, 48),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
-    );
-    m.rotation.x = -Math.PI / 2;
-    m.position.y = 0.06;
-    m.visible = false;
-    scene.add(m);
-    return m;
-  };
-  const aimRing = groundRing(0xffc23a, 0.9);
-  const aimFill = new THREE.Mesh(
-    new THREE.CircleGeometry(1, 40),
-    new THREE.MeshBasicMaterial({ color: 0xffc23a, transparent: true, opacity: 0.22, depthWrite: false })
-  );
-  aimFill.rotation.x = -Math.PI / 2;
-  aimFill.position.y = 0.055;
-  aimFill.visible = false;
-  scene.add(aimFill);
-  const rangeRing = groundRing(0xffffff, 0.35);
-  const auraRing = groundRing(0xff5a5f, 0.7);
+  const aim = createAim(scene);
 
-  // точка ульты по оттяжке кнопки: (dx, dy) — вектор −1..1, экранный низ = +Z.
-  // короткое касание без оттяжки — в ближайшего врага в радиусе, иначе перед собой
+  // Оттяжка кнопки: (dx, dy) — вектор −1..1 в экранных осях, экранный низ = +Z.
+  // Меньше порога — считаем коротким касанием (автоприцел).
+  const AIM_DEAD = 0.25;
+  const dragDir = (dx, dy) => {
+    const m = Math.hypot(dx, dy);
+    return m < AIM_DEAD ? null : { x: dx / m, z: dy / m };
+  };
+
+  // точка ульты по оттяжке кнопки; короткое касание — в ближайшего врага, иначе перед собой
   const ultPoint = (dx, dy) => {
     const mag = Math.hypot(dx, dy);
     if (mag < 0.2) {
-      const tgt = nearestEnemy(player, world, kit.ultRange);
+      const tgt = nearestEnemy(player, world, kit.ultAutoRange ?? kit.ultRange);
       if (tgt) return { x: tgt.pos.x, z: tgt.pos.z };
       const r = kit.ultRange * 0.5;
       return { x: player.pos.x + Math.sin(player.facing) * r, z: player.pos.z + Math.cos(player.facing) * r };
@@ -162,7 +151,12 @@ export function createGame(mount, input, onHud, heroId) {
 
   const step = (dt, t) => {
     // --- кнопки ---
-    if (input.attack) { input.attack = false; kit.attack(); }
+    if (input.attack) { input.attack = false; kit.attack(null); }       // касание — автоприцел
+    if (input.attackFire) {                                              // отпустили оттянутую кнопку
+      const { dx, dy } = input.attackFire;
+      input.attackFire = null;
+      kit.attack(dragDir(dx, dy));
+    }
     if (input.ult) {
       // тап по ульте (или K на клавиатуре); прицельной ульте — автоцель
       input.ult = false;
@@ -192,6 +186,12 @@ export function createGame(mount, input, onHud, heroId) {
       player.facing += d * Math.min(1, dt * 14);
     }
 
+    // пока кнопка атаки оттянута, герой смотрит в сторону прицела (так же ведётся струя сметанамёта)
+    if (input.attackAim?.active && player.canAct() && !kit.busy) {
+      const d = dragDir(input.attackAim.dx, input.attackAim.dy);
+      if (d) player.facing = Math.atan2(d.x, d.z);
+    }
+
     kit.update(dt, world);
     if (kit.forcedMoving != null) player.moving = kit.forcedMoving;
 
@@ -206,27 +206,28 @@ export function createGame(mount, input, onHud, heroId) {
     // --- модели ---
     player.model.animate({ t, stride: player.stride, moving: player.moving, ...kit.pose() });
     dummy.model.animate({ t });
-    for (const f of fighters) f.updateView(dt);
+    for (const f of fighters) {
+      f.updateView(dt);
+      // смерть (случается от урона в любой момент кадра) и возрождение — по смене состояния
+      if (f.alive !== (f.wasAlive ?? true)) sound.play(f.alive ? 'respawn' : 'death');
+      f.wasAlive = f.alive;
+    }
 
-    // --- круги на земле ---
-    const aiming = kit.ultAim === 'drag' && input.ultAim?.active && player.alive;
-    aimRing.visible = aimFill.visible = rangeRing.visible = !!aiming;
-    if (aiming) {
+    // --- прицел на земле ---
+    const aDir = input.attackAim?.active && player.alive ? dragDir(input.attackAim.dx, input.attackAim.dy) : null;
+    if (aDir) {
+      aim.showAttack(kit.attackShape(), player.pos, Math.atan2(aDir.x, aDir.z));
+    } else aim.hideAttack();
+
+    // зона ульты, которая действует сейчас (струя Смитаны)
+    const area = player.alive ? kit.activeArea?.() : null;
+    if (area) aim.showArea(area, player.pos, player.facing);
+    else aim.hideArea();
+
+    if (kit.ultAim === 'drag' && input.ultAim?.active && player.alive) {
       const p = ultPoint(input.ultAim.dx, input.ultAim.dy);
-      aimRing.position.set(p.x, 0.06, p.z);
-      aimFill.position.set(p.x, 0.055, p.z);
-      aimRing.scale.setScalar(kit.ultRadius);
-      aimFill.scale.setScalar(kit.ultRadius);
-      rangeRing.position.set(player.pos.x, 0.06, player.pos.z);
-      rangeRing.scale.setScalar(kit.ultRange);
-    }
-    const aura = player.alive ? kit.aura ?? 0 : 0;
-    auraRing.visible = aura > 0;
-    if (aura > 0) {
-      auraRing.position.set(player.pos.x, 0.06, player.pos.z);
-      auraRing.scale.setScalar(aura);
-      auraRing.rotation.z = t * 4;
-    }
+      aim.showUlt(kit.ultShape, player.pos, Math.atan2(p.x - player.pos.x, p.z - player.pos.z), p);
+    } else aim.hideUlt();
 
     updateCamera(dt);
     overlay.update(dt, camera, fighters);
@@ -264,6 +265,7 @@ export function createGame(mount, input, onHud, heroId) {
       cancelAnimationFrame(raf);
       ro.disconnect();
       overlay.dispose();
+      sound.stopAll();
       projectiles.clear();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();

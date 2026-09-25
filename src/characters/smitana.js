@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { mat, box, part, cyl, resetRig, poseIdle, poseRun, overlayThrust } from './blocks.js';
+import { mat, box, part, resetRig, poseIdle, poseRun, overlayThrust } from './blocks.js';
 
 // ============================================================
-// СМИТАНА + КРАСНЫЙ МОТОЦИКЛ — игровая модель
-// Геометрия из превью smitana-blocky.jsx. Смотрит в +Z, рост ≈ 2.45.
+// СМИТАНА — игровая модель
+// Геометрия из превью smitana-blocky.jsx (без мотоцикла: ульта теперь —
+// сметанамёт). Смотрит в +Z, рост ≈ 2.45.
 // ============================================================
 
 export function createSmitana() {
@@ -16,21 +17,11 @@ export function createSmitana() {
     eye:    new THREE.MeshStandardMaterial({ color: 0xf4f4f2, roughness: 0.3, emissive: 0x9aa0aa, emissiveIntensity: 0.25 }),
     shorts: mat(0x101114, 0.6),
     stripe: mat(0xc4232c, 0.5),
-    moto:   mat(0xc4232c, 0.35),
-    motoD:  mat(0x8c1620, 0.35),
-    chrome: mat(0xd8dadf, 0.15),
-    tire:   mat(0x111214, 0.9),
-    rim:    mat(0xa8acb4, 0.25),
-    glass:  new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.2, transparent: true, opacity: 0.75 }),
   };
 
   const root = new THREE.Group();
-  // во время ульты крутится всё вместе — и Смитана, и мотоцикл
-  const spinner = new THREE.Group();
-  root.add(spinner);
-
   const smi = new THREE.Group();
-  spinner.add(smi);
+  root.add(smi);
 
   const hips = new THREE.Group();
   hips.position.y = 1.15;
@@ -111,107 +102,31 @@ export function createSmitana() {
 
   const rig = { hips, hipsY: 1.15, torso, head, armL, armR, legL, legR, legX: 0.2, legY: 0 };
 
-  // ---------------- МОТОЦИКЛ ----------------
-  const bike = new THREE.Group();
-  bike.visible = false;
-  spinner.add(bike);
-
-  const strut = (x1, y1, z1, x2, y2, z2, material, th = 0.06) => {
-    const p1 = new THREE.Vector3(x1, y1, z1);
-    const p2 = new THREE.Vector3(x2, y2, z2);
-    const m = new THREE.Mesh(new THREE.BoxGeometry(th, p1.distanceTo(p2), th), material);
-    m.position.copy(p1.clone().add(p2).multiplyScalar(0.5));
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p2.clone().sub(p1).normalize());
-    m.castShadow = true;
-    bike.add(m);
-    return m;
-  };
-
-  const R = 0.42;
-  const FRONT_X = 0.86, REAR_X = -0.8;
-  const HEAD = { x: 0.72, y: 1.0, z: 0.52 };
-  const PIVOT = { x: 0.02, y: 0.62, z: -0.05 };
-
-  const wheel = (x) => {
-    const g = new THREE.Group();
-    g.position.set(x, R, 0);
-    g.rotation.z = Math.PI / 2;
-    g.add(cyl(R, R, 0.2, M.tire));
-    g.add(cyl(R * 0.55, R * 0.55, 0.21, M.rim));
-    g.add(cyl(0.06, 0.06, 0.23, M.chrome));
-    for (let i = 0; i < 6; i++) {
-      const spoke = box(R * 0.9, 0.03, 0.03, M.chrome);
-      spoke.rotation.x = (i / 6) * Math.PI * 2;
-      g.add(spoke);
-    }
-    bike.add(g);
-    return g;
-  };
-  const wFront = wheel(FRONT_X), wRear = wheel(REAR_X);
-
-  const frame = new THREE.Group();
-  bike.add(frame);
-  strut(FRONT_X, R, 0.09, HEAD.x, HEAD.y, HEAD.z, M.chrome, 0.05);
-  strut(FRONT_X, R, -0.09, HEAD.x, HEAD.y, HEAD.z, M.chrome, 0.05);
-  strut(HEAD.x, HEAD.y, HEAD.z, 0.0, 0.92, -0.4, M.motoD, 0.08);
-  strut(HEAD.x, HEAD.y - 0.08, HEAD.z, PIVOT.x, PIVOT.y, PIVOT.z, M.motoD, 0.07);
-  strut(PIVOT.x, PIVOT.y, PIVOT.z, REAR_X, R, 0.1, M.motoD, 0.08);
-  strut(PIVOT.x, PIVOT.y, PIVOT.z, REAR_X, R, -0.1, M.motoD, 0.08);
-  strut(-0.15, 0.85, -0.25, REAR_X + 0.1, R + 0.1, 0, M.chrome, 0.04);
-  frame.add(box(0.3, 0.3, 0.4, M.motoD, 0.06, 0.6, 0));
-  frame.add(box(0.32, 0.06, 0.42, M.chrome, 0.06, 0.44, 0));
-  frame.add(box(0.4, 0.24, 0.5, M.moto, 0.28, 0.9, 0.2));
-  frame.add(box(0.32, 0.1, 0.5, M.moto, -0.08, 0.9, -0.35));
-  frame.add(box(0.3, 0.08, 0.14, M.motoD, -0.28, 0.88, -0.62));
-  frame.add(box(0.3, 0.22, 0.16, M.moto, HEAD.x + 0.1, HEAD.y - 0.05, HEAD.z + 0.08));
-  frame.add(box(0.28, 0.15, 0.04, M.glass, HEAD.x + 0.1, HEAD.y + 0.08, HEAD.z + 0.16));
-  frame.add(box(0.16, 0.1, 0.08, M.chrome, HEAD.x + 0.16, HEAD.y - 0.1, HEAD.z + 0.16));
-  frame.add(box(0.55, 0.05, 0.08, M.mask, HEAD.x, HEAD.y + 0.16, HEAD.z));
-  frame.add(box(0.05, 0.12, 0.05, M.chrome, HEAD.x + 0.26, HEAD.y + 0.1, HEAD.z));
-  frame.add(box(0.05, 0.12, 0.05, M.chrome, HEAD.x - 0.26, HEAD.y + 0.1, HEAD.z));
-  strut(0.15, 0.52, 0.15, REAR_X + 0.15, 0.4, 0.16, M.chrome, 0.08);
-  frame.add(box(0.1, 0.1, 0.1, M.chrome, REAR_X + 0.05, 0.4, 0.16));
-  frame.add(box(0.05, 0.05, 0.16, M.motoD, 0.1, 0.52, 0.28));
-  frame.add(box(0.05, 0.05, 0.16, M.motoD, 0.1, 0.52, -0.28));
-
-  // ульта: крутится на мотоцикле с поднятым передним колесом
-  const poseMoto = (t) => {
-    bike.visible = true;
-    const wheelie = 0.22 + Math.sin(t * 5) * 0.06;
-    bike.rotation.x = -wheelie;
-    wFront.rotation.x = t * 14;
-    wRear.rotation.x = t * 16;
-    spinner.rotation.y = t * 11;
-
-    smi.position.set(0.1, -0.15 + wheelie * 0.9, -0.25);
-    smi.rotation.x = -wheelie * 0.9;
-    torso.rotation.x = 0.55;
-    armL.sh.rotation.set(-1.5, 0, 0.25);
-    armR.sh.rotation.set(-1.5, 0, -0.25);
-    armL.el.rotation.x = -0.5; armR.el.rotation.x = -0.5;
-    legL.hp.position.set(-0.24, 0, -0.1);
-    legR.hp.position.set(0.24, 0, -0.1);
-    legL.hp.rotation.x = -1.15; legR.hp.rotation.x = -1.15;
-    legL.kn.rotation.x = 1.45; legR.kn.rotation.x = 1.45;
-    head.rotation.set(0.15, 0, 0);
+  // ульта-сметанамёт: обе руки вперёд, ладони вместе, корпус упирается против отдачи
+  const poseSpray = (t) => {
+    const kick = Math.sin(t * 40) * 0.03;
+    torso.rotation.x = -0.12 + kick;
+    armL.sh.rotation.set(-1.45 + kick, 0, -0.28);
+    armR.sh.rotation.set(-1.45 + kick, 0, 0.28);
+    armL.el.rotation.x = -0.15; armR.el.rotation.x = -0.15;
+    head.rotation.set(0.05, 0, 0);
   };
 
   /**
-   * state: { t, stride, moving, throw, throwSide, spin }
+   * state: { t, stride, moving, throw, throwSide, spray }
    *  throw — null или 0..1 бросок сметаны, throwSide — рука
-   *  spin  — ульта на мотоцикле
+   *  spray — ульта: струя сметаны из ладоней
    */
-  const animate = ({ t, stride, moving, throw: th = null, throwSide = 1, spin = false }) => {
+  const animate = ({ t, stride, moving, throw: th = null, throwSide = 1, spray = false }) => {
     resetRig(rig);
-    bike.visible = false;
-    spinner.rotation.y = 0;
-    smi.position.set(0, 0, 0);
-    smi.rotation.x = 0;
-    if (spin) { poseMoto(t); return; }
     if (moving) poseRun(rig, stride);
     else poseIdle(rig, t);
-    if (th != null) overlayThrust(rig, th, throwSide, 1.8);
+    if (spray) poseSpray(t);
+    else if (th != null) overlayThrust(rig, th, throwSide, 1.8);
   };
 
-  return { root, animate };
+  // откуда бьёт струя — между ладонями, в координатах модели
+  const nozzle = new THREE.Vector3(0, 2.05, 0.95);
+
+  return { root, animate, nozzle };
 }

@@ -4,6 +4,7 @@ import { heroById, HEROES } from './game/heroes.js';
 import Joystick from './ui/Joystick.jsx';
 import ActionButtons from './ui/ActionButtons.jsx';
 import HeroSelect from './ui/HeroSelect.jsx';
+import { sound } from './game/sound.js';
 
 // клавиатура — только для отладки на компьютере; H — ударить себя (проверка смерти)
 const KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
@@ -14,9 +15,11 @@ const startHero = HEROES.some((h) => h.id === params.get('hero')) ? params.get('
 
 export default function App() {
   const [heroId, setHeroId] = useState(startHero);
+  const [muted, setMuted] = useState(sound.muted);
 
-  // на телефоне по первому касанию — полный экран и горизонтальная ориентация
-  const goFullscreen = () => {
+  // по первому касанию: разрешить звук, а на телефоне — полный экран и горизонталь
+  const onFirstTouch = () => {
+    sound.unlock();
     const el = document.documentElement;
     if (document.fullscreenElement || !el.requestFullscreen) return;
     el.requestFullscreen({ navigationUI: 'hide' })
@@ -25,10 +28,17 @@ export default function App() {
   };
 
   return (
-    <div className="game" onPointerDownCapture={goFullscreen}>
+    <div className="game" onPointerDownCapture={onFirstTouch}>
       {heroId
         ? <Arena key={heroId} heroId={heroId} onExit={() => setHeroId(null)} />
         : <HeroSelect onPick={setHeroId} />}
+      <button
+        className="sound-toggle"
+        onClick={() => { sound.setMuted(!muted); setMuted(!muted); }}
+        aria-label={muted ? 'Включить звук' : 'Выключить звук'}
+      >
+        {muted ? '🔇' : '🔊'}
+      </button>
       <div className="rotate-hint">
         <div className="rotate-phone" />
         <p>Поверни телефон горизонтально</p>

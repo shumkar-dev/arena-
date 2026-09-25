@@ -45,6 +45,7 @@ export function createShabaKit(me) {
     ultT: 0,
     ultCd: 0,
     queued: 0,         // нажатие, сделанное во время удара, выполнится сразу после него
+    dir: null,         // направление нажатия; null — автоприцел
   };
 
   const enemies = (world) => world.fighters.filter((f) => f !== me && f.alive && f.team !== me.team);
@@ -92,13 +93,23 @@ export function createShabaKit(me) {
     get busy() { return s.action === 'hold' || s.action === 'lunge'; },
     get speedMul() { return s.ultT > 0 ? T.ultSpeedMul : 1; },
 
-    attack() {
+    // dir — { x, z } с оттяжки кнопки или null — автоприцел
+    attack(dir = null) {
       s.queued = 0.35;
+      s.dir = dir;
+    },
+
+    // форма прицела атаки: короткий сектор перед собой, у захвата — чуть длиннее (рывок)
+    attackShape() {
+      return s.combo >= 2
+        ? { type: 'cone', reach: me.radius + T.grabReach + 1.4, arc: T.punchArc * 0.8 }
+        : { type: 'cone', reach: me.radius + T.punchReach + 0.4, arc: T.punchArc };
     },
 
     startAttack(world) {
       s.queued = 0;
-      autoAim(world);
+      if (s.dir) me.facing = Math.atan2(s.dir.x, s.dir.z);
+      else autoAim(world);
       s.cd = T.attackCooldown;
       s.comboIdle = 0;
       s.actionT = 0;
@@ -111,8 +122,9 @@ export function createShabaKit(me) {
       }
     },
 
-    ult() {
+    ult(aim, world) {
       if (!me.canAct() || s.ultCd > 0) return;
+      world?.sfx('ultShaba');
       s.ultT = T.ultDuration;
       s.ultCd = T.ultCooldown;
     },
@@ -145,8 +157,10 @@ export function createShabaKit(me) {
           const tgt = findTarget(world, T.punchReach);
           if (tgt) {
             world.damage(tgt, T.punchDamage * dmgMul(), me, 'hit');
+            world.sfx('punch');
             s.combo += 1;
           } else {
+            world.sfx('swing');
             s.combo = 0;     // промах сбивает серию
           }
         }
@@ -160,6 +174,7 @@ export function createShabaKit(me) {
         if (tgt && !tgt.grabbedBy) {
           s.victim = tgt;
           tgt.grabbedBy = me;
+          world.sfx('grab');
           s.action = 'hold';
           s.holdT = 0;
           s.ticks = 0;
@@ -186,6 +201,7 @@ export function createShabaKit(me) {
         while (s.ticks < due) {
           s.ticks += 1;
           world.damage(v, T.grabTickDamage * dmgMul(), me, 'grab');
+          world.sfx('punch');
           if (!v.alive) break;
         }
         if (!v.alive || s.holdT >= T.grabTime) release();

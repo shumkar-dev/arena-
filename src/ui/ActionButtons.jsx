@@ -1,86 +1,107 @@
 import React, { useRef, useState } from 'react';
 
-// Правая сторона: атака и ульта.
+// Правая сторона: атака и ульта, обе с прицелом как в Brawl Stars.
+// Короткое касание — автоприцел в ближайшего врага.
+// Зажать и оттянуть — на земле видна линия или сектор атаки, отпустить — удар в эту сторону.
 // На атаке — три точки серии: после двух попаданий третья атака особая.
 // Ульта показывает перезарядку кольцом и секундами.
-// Прицельная ульта (Гаргашмель): зажать кнопку и оттянуть — на земле виден круг,
-// отпустить — удар в эту точку. Короткое касание бьёт в ближайшего врага.
-const DRAG_RADIUS = 90;
+const DRAG_RADIUS = 80;
 
-export default function ActionButtons({ input, hud, icons }) {
-  const press = (key) => (e) => {
-    e.preventDefault();
-    input[key] = true;
-  };
-  const ready = hud.ultCd <= 0;
-  const deg = Math.round((1 - hud.ultFrac) * 360);
-  const special = hud.special;
-
-  // ---- прицельная ульта ----
-  const aim = useRef(null);   // { id, x, y } — где нажали
+// Оттягиваемая кнопка: пока палец держит её, сообщает вектор −1..1 (экранные оси).
+function useDrag({ enabled, onAim, onRelease }) {
+  const ptr = useRef(null);   // { id, x, y } — где нажали
   const [knob, setKnob] = useState(null);
 
   const vec = (e) => {
-    let dx = e.clientX - aim.current.x, dy = e.clientY - aim.current.y;
+    let dx = e.clientX - ptr.current.x, dy = e.clientY - ptr.current.y;
     const d = Math.hypot(dx, dy);
     if (d > DRAG_RADIUS) { dx *= DRAG_RADIUS / d; dy *= DRAG_RADIUS / d; }
     return { dx, dy };
   };
-  const aimDown = (e) => {
-    e.preventDefault();
-    if (!ready || aim.current) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    aim.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    input.ultAim = { active: true, dx: 0, dy: 0 };
-    setKnob({ dx: 0, dy: 0 });
-  };
-  const aimMove = (e) => {
-    if (!aim.current || e.pointerId !== aim.current.id) return;
+  const end = (e, fire) => {
+    if (!ptr.current || e.pointerId !== ptr.current.id) return;
     const v = vec(e);
-    input.ultAim = { active: true, dx: v.dx / DRAG_RADIUS, dy: v.dy / DRAG_RADIUS };
-    setKnob(v);
-  };
-  const aimUp = (e) => {
-    if (!aim.current || e.pointerId !== aim.current.id) return;
-    const v = vec(e);
-    aim.current = null;
-    input.ultAim = { active: false, dx: 0, dy: 0 };
-    input.ultFire = { dx: v.dx / DRAG_RADIUS, dy: v.dy / DRAG_RADIUS };
+    ptr.current = null;
     setKnob(null);
-  };
-  const aimCancel = (e) => {
-    if (!aim.current || e.pointerId !== aim.current.id) return;
-    aim.current = null;
-    input.ultAim = { active: false, dx: 0, dy: 0 };
-    setKnob(null);
+    onAim(null);
+    if (fire) onRelease(v.dx / DRAG_RADIUS, v.dy / DRAG_RADIUS);
   };
 
-  const ultHandlers = hud.ultAim === 'drag'
-    ? { onPointerDown: aimDown, onPointerMove: aimMove, onPointerUp: aimUp, onPointerCancel: aimCancel }
-    : { onPointerDown: press('ult') };
+  return {
+    knob,
+    handlers: {
+      onPointerDown(e) {
+        e.preventDefault();
+        if (!enabled || ptr.current) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        ptr.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        setKnob({ dx: 0, dy: 0 });
+        onAim({ dx: 0, dy: 0 });
+      },
+      onPointerMove(e) {
+        if (!ptr.current || e.pointerId !== ptr.current.id) return;
+        const v = vec(e);
+        setKnob(v);
+        onAim({ dx: v.dx / DRAG_RADIUS, dy: v.dy / DRAG_RADIUS });
+      },
+      onPointerUp: (e) => end(e, true),
+      onPointerCancel: (e) => end(e, false),
+    },
+  };
+}
+
+const Knob = ({ knob }) => knob && (
+  <i className="aim-knob" style={{ transform: `translate(${knob.dx}px, ${knob.dy}px)` }} />
+);
+
+export default function ActionButtons({ input, hud, icons }) {
+  const ready = hud.ultCd <= 0;
+  const deg = Math.round((1 - hud.ultFrac) * 360);
+  const special = hud.special;
+
+  const attack = useDrag({
+    enabled: !hud.attackLocked,
+    onAim: (v) => { input.attackAim = v ? { active: true, ...v } : { active: false, dx: 0, dy: 0 }; },
+    // короткое касание — автоприцел, оттяжка — в выбранную сторону (движок решает по длине вектора)
+    onRelease: (dx, dy) => { input.attackFire = { dx, dy }; },
+  });
+
+  const ult = useDrag({
+    enabled: ready,
+    onAim: (v) => { input.ultAim = v ? { active: true, ...v } : { active: false, dx: 0, dy: 0 }; },
+    onRelease: (dx, dy) => { input.ultFire = { dx, dy }; },
+  });
+
+  // ульта без прицела срабатывает сразу по касанию
+  const ultTap = {
+    onPointerDown(e) { e.preventDefault(); input.ult = true; },
+  };
+
+  const attackIcon = hud.steer ? '🎯' : special ? icons.special : icons.attack;
 
   return (
     <div className={`actions ${hud.dead ? 'disabled' : ''}`}>
       <button
-        className={`btn-ult ${ready ? 'ready' : ''} ${hud.ultActive ? 'active' : ''} ${knob ? 'aiming' : ''}`}
-        {...ultHandlers}
+        className={`btn-ult ${ready ? 'ready' : ''} ${hud.ultActive ? 'active' : ''} ${ult.knob ? 'aiming' : ''}`}
+        {...(hud.ultAim === 'drag' ? ult.handlers : ultTap)}
         style={{ '--cd': `${deg}deg` }}
         aria-label="Ульта"
       >
         <span>{ready ? 'УЛЬТА' : Math.ceil(hud.ultCd)}</span>
-        {knob && <i className="ult-knob" style={{ transform: `translate(${knob.dx}px, ${knob.dy}px)` }} />}
+        <Knob knob={ult.knob} />
       </button>
       <button
-        className={`btn-attack ${special ? 'grab' : ''} ${hud.frenzy ? 'frenzy' : ''} ${hud.attackLocked ? 'locked' : ''}`}
-        onPointerDown={press('attack')}
+        className={`btn-attack ${special ? 'grab' : ''} ${hud.frenzy ? 'frenzy' : ''} ${hud.attackLocked ? 'locked' : ''} ${attack.knob ? 'aiming' : ''}`}
+        {...attack.handlers}
         aria-label={special ? 'Особая атака' : 'Атака'}
       >
-        <span className="btn-attack-icon">{special ? icons.special : icons.attack}</span>
+        <span className="btn-attack-icon">{attackIcon}</span>
         <span className="combo">
           {[0, 1, 2].map((i) => (
             <i key={i} className={i < hud.combo ? 'on' : i === 2 && special ? 'next' : ''} />
           ))}
         </span>
+        <Knob knob={attack.knob} />
       </button>
     </div>
   );

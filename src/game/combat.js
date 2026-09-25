@@ -22,6 +22,13 @@ export function nearestEnemy(me, world, maxDist = Infinity) {
 
 export const faceTowards = (me, x, z) => { me.facing = Math.atan2(x - me.pos.x, z - me.pos.z); };
 
+// навести атаку: по направлению с кнопки, а без него — в ближайшего врага в радиусе autoAim
+export function aimAttack(me, world, dir, autoAim) {
+  if (dir) { me.facing = Math.atan2(dir.x, dir.z); return; }
+  const tgt = nearestEnemy(me, world, autoAim);
+  if (tgt) faceTowards(me, tgt.pos.x, tgt.pos.z);
+}
+
 // враги в конусе перед бойцом: reach — досягаемость сверх радиусов обоих
 export function enemiesInCone(me, world, reach, arc) {
   const out = [];
@@ -35,6 +42,17 @@ export function enemiesInCone(me, world, reach, arc) {
   return out.sort((a, b) => a.d - b.d).map((o) => o.e);
 }
 
+// нет ли укрытия на отрезке между точками — струя и лучи через стены не проходят
+export function lineClear(x1, z1, x2, z2) {
+  const d = Math.hypot(x2 - x1, z2 - z1);
+  const n = Math.max(1, Math.ceil(d / 0.3));
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    if (pointBlocked(x1 + (x2 - x1) * t, z1 + (z2 - z1) * t, 0)) return false;
+  }
+  return true;
+}
+
 // враги в круге (x, z, r) — для взрывов и вращений
 export function enemiesInRadius(me, world, x, z, r) {
   return enemiesOf(me, world).filter((e) => Math.hypot(e.pos.x - x, e.pos.z - z) <= r + e.radius);
@@ -46,11 +64,13 @@ export function enemiesInRadius(me, world, x, z, r) {
  * Третья атака (combo === 2) — особая.
  */
 export function createChain({ reset = 2.2, queueTime = 0.35 } = {}) {
-  const c = { combo: 0, idle: 0, cd: 0, queued: 0 };
+  const c = { combo: 0, idle: 0, cd: 0, queued: 0, dir: null };
   return {
     get combo() { return c.combo; },
     get special() { return c.combo >= 2; },
-    press() { c.queued = queueTime; },
+    // направление последнего нажатия: { x, z } или null — автоприцел
+    get dir() { return c.dir; },
+    press(dir = null) { c.queued = queueTime; c.dir = dir; },
     // вызывать каждый кадр; вернёт true, когда пора начать атаку
     tick(dt, free) {
       c.cd = Math.max(0, c.cd - dt);
