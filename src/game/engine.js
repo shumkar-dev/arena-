@@ -1,21 +1,18 @@
 import * as THREE from 'three';
 import { buildArena, resolveCollisions, ARENA } from './arena.js';
 import { createShaba } from '../characters/shaba.js';
+import { createDummy } from '../characters/dummy.js';
+import { createFighter } from './fighter.js';
+import { createShabaKit, SHABA } from './kits/shaba.js';
+import { createOverlay } from './overlay.js';
 
 // ============================================================
 // ИГРОВОЙ ЦИКЛ — вне React, чтобы не пересоздавать сцену на каждый рендер.
 // React-интерфейс пишет в input и читает состояние через onHud.
 // ============================================================
 
-export const TUNING = {
-  speed: 5.5,          // ед/с
-  radius: 0.5,         // радиус столкновений персонажа
-  punchTime: 0.3,      // длительность удара, с
-  punchCooldown: 0.45,
-  ultDuration: 5,      // ульта Шабы: баран, 5 с
-  ultCooldown: 20,     // все ульты — 20 с
-  ultSpeedMul: 1.5,
-};
+const PLAYER_SPAWN = { x: 0, z: ARENA.halfL - 3, facing: Math.PI };   // смотрит на север (−Z)
+const DUMMY_SPAWN = { x: -2.2, z: 7.5, facing: 0 };
 
 const CAM_OFFSET = new THREE.Vector3(0, 14.5, 9.5);
 
@@ -59,28 +56,44 @@ export function createGame(mount, input, onHud) {
 
   buildArena(scene);
 
-  // ---- игрок ----
-  const shaba = createShaba();
-  scene.add(shaba.root);
+  // ---- бойцы ----
+  const player = createFighter({ name: 'Шаба', team: 'blue', model: createShaba(), maxHp: SHABA.maxHp, spawn: PLAYER_SPAWN });
+  const kit = createShabaKit(player);
+  player.stride = 0;
+  player.moving = false;
 
-  // тень-метка под игроком, как в Brawl Stars
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.62, 0.78, 32),
-    new THREE.MeshBasicMaterial({ color: 0x3fd0ff, transparent: true, opacity: 0.85 })
-  );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.03;
-  scene.add(ring);
+  const dummy = createFighter({ name: 'Манекен', team: 'red', model: createDummy(), maxHp: 4000, spawn: DUMMY_SPAWN, radius: 0.55, headY: 2.75 });
+  dummy.isStatic = true;
 
-  const player = {
-    pos: new THREE.Vector3(0, 0, ARENA.halfL - 3),
-    facing: Math.PI,        // смотрит на север (−Z)
-    stride: 0,
-    moving: false,
-    punchT: -1,             // −1 — удара нет
-    punchCd: 0,
-    ultT: 0,                // осталось ульты
-    ultCd: 0,               // осталось перезарядки
+  const fighters = [player, dummy];
+  for (const f of fighters) f.addTo(scene);
+
+  const overlay = createOverlay(mount);
+
+  const world = {
+    fighters,
+    damage(target, amount, from, kind) {
+      const dealt = target.takeDamage(amount, from);
+      if (dealt > 0) overlay.spawnNumber(target, dealt, target === player ? 'taken' : kind);
+    },
+  };
+
+  // бойцы не проходят друг сквозь друга; неподвижных толкать нельзя
+  const separate = () => {
+    for (let i = 0; i < fighters.length; i++) {
+      for (let j = i + 1; j < fighters.length; j++) {
+        const a = fighters[i], b = fighters[j];
+        if (!a.alive || !b.alive || a.grabbedBy === b || b.grabbedBy === a) continue;
+        const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
+        const d = Math.hypot(dx, dz), min = a.radius + b.radius;
+        if (d >= min || d < 1e-6) continue;
+        const push = min - d, nx = dx / d, nz = dz / d;
+        const wa = a.isStatic ? 0 : b.isStatic ? 1 : 0.5;
+        const wb = 1 - wa;
+        a.pos.x -= nx * push * wa; a.pos.z -= nz * push * wa;
+        b.pos.x += nx * push * wb; b.pos.z += nz * push * wb;
+      }
+    }
   };
 
   const camTarget = new THREE.Vector3();
@@ -97,82 +110,59 @@ export function createGame(mount, input, onHud) {
   };
   updateCamera(-1);
 
-  const tryAttack = () => {
-    if (player.punchCd > 0) return;
-    player.punchT = 0;
-    player.punchCd = TUNING.punchCooldown;
-  };
-  const tryUlt = () => {
-    if (player.ultCd > 0) return;
-    player.ultT = TUNING.ultDuration;
-    player.ultCd = TUNING.ultCooldown;
-  };
-
   const clock = new THREE.Clock();
   let raf = 0, hudAcc = 0, lastHud = '';
 
   const step = (dt, t) => {
     // --- кнопки ---
-    if (input.attack) { input.attack = false; tryAttack(); }
-    if (input.ult) { input.ult = false; tryUlt(); }
+    if (input.attack) { input.attack = false; kit.attack(); }
+    if (input.ult) { input.ult = false; kit.ult(); }
+    if (input.selfHit) { input.selfHit = false; world.damage(player, 1000, null, 'taken'); }
 
-    // --- движение ---
+    // --- движение игрока ---
     let mx = input.moveX, mz = input.moveY;
     const len = Math.hypot(mx, mz);
     if (len > 1) { mx /= len; mz /= len; }
     const mag = Math.min(1, len);
-    const riding = player.ultT > 0;
-    const speed = TUNING.speed * (riding ? TUNING.ultSpeedMul : 1);
 
-    player.moving = mag > 0.12;
+    player.moving = mag > 0.12 && player.canAct() && !kit.busy;
+    const before = player.pos.clone();
     if (player.moving) {
-      const before = player.pos.clone();
+      const speed = SHABA.speed * kit.speedMul;
       player.pos.x += mx * speed * mag * dt;
       player.pos.z += mz * speed * mag * dt;
-      resolveCollisions(player.pos, TUNING.radius);
-      const moved = before.distanceTo(player.pos);
-      player.stride += moved * (riding ? 1.35 : 1.65);
       // плавный поворот к направлению движения
-      const target = Math.atan2(mx, mz);
-      let d = target - player.facing;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
+      const d = Math.atan2(Math.sin(Math.atan2(mx, mz) - player.facing), Math.cos(Math.atan2(mx, mz) - player.facing));
       player.facing += d * Math.min(1, dt * 14);
     }
 
-    // --- таймеры ---
-    player.punchCd = Math.max(0, player.punchCd - dt);
-    player.ultCd = Math.max(0, player.ultCd - dt);
-    player.ultT = Math.max(0, player.ultT - dt);
-    if (player.punchT >= 0) {
-      player.punchT += dt / TUNING.punchTime;
-      if (player.punchT >= 1) player.punchT = -1;
-    }
+    kit.update(dt, world);
 
-    // --- модель ---
-    shaba.root.position.copy(player.pos);
-    shaba.root.rotation.y = player.facing;
-    shaba.animate({
-      t,
-      stride: player.stride,
-      moving: player.moving,
-      riding: player.ultT > 0,
-      punch: player.punchT >= 0 ? player.punchT : null,
-    });
-    ring.position.x = player.pos.x;
-    ring.position.z = player.pos.z;
+    // --- столкновения ---
+    separate();
+    for (const f of fighters) if (f.alive && !f.grabbedBy) resolveCollisions(f.pos, f.radius);
+    player.stride += before.distanceTo(player.pos) * (kit.speedMul > 1 ? 1.35 : 1.65);
+
+    // --- модели ---
+    player.model.animate({ t, stride: player.stride, moving: player.moving, ...kit.pose() });
+    dummy.model.animate({ t });
+    for (const f of fighters) f.updateView(dt);
 
     updateCamera(dt);
+    overlay.update(dt, camera, fighters);
 
     // --- HUD: ~10 раз в секунду и только при изменениях ---
     hudAcc += dt;
     if (hudAcc > 0.1) {
       hudAcc = 0;
+      const k = kit.hud();
       const hud = {
-        ultCd: Math.ceil(player.ultCd * 10) / 10,
-        ultFrac: player.ultCd / TUNING.ultCooldown,
-        ultActive: player.ultT > 0,
+        ...k,
+        ultCd: Math.ceil(k.ultCd * 10) / 10,
+        dead: !player.alive,
+        respawnIn: Math.ceil(player.respawnIn),
       };
-      const key = `${hud.ultCd}|${hud.ultActive}`;
+      const key = `${hud.ultCd}|${hud.ultActive}|${hud.combo}|${hud.grabbing}|${hud.dead}|${hud.respawnIn}`;
       if (key !== lastHud) { lastHud = key; onHud?.(hud); }
     }
   };
@@ -186,9 +176,11 @@ export function createGame(mount, input, onHud) {
   loop();
 
   return {
+    fighters,
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      overlay.dispose();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         if (o.material) o.material.dispose();

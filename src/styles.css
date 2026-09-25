@@ -43,7 +43,7 @@ html, body, #root {
   text-shadow: 0 2px 0 var(--red-900);
 }
 
-/* ---- джойстик ---- */
+/* ---- джойстик: фиксирован в левом нижнем углу ---- */
 .joy-zone {
   position: absolute;
   left: 0; top: 0; bottom: 0;
@@ -52,21 +52,18 @@ html, body, #root {
 }
 .joy-base {
   position: absolute;
+  left: max(28px, env(safe-area-inset-left));
+  bottom: max(26px, env(safe-area-inset-bottom));
   width: 128px; height: 128px;
-  margin: -64px 0 0 -64px;
   border-radius: 50%;
   background: rgba(20, 4, 6, 0.35);
-  border: 3px solid rgba(255, 240, 230, 0.55);
+  border: 3px solid rgba(255, 240, 230, 0.45);
   display: flex; align-items: center; justify-content: center;
   pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 0.15s;
 }
-.joy-idle {
-  left: calc(max(24px, env(safe-area-inset-left)) + 84px);
-  top: auto;
-  bottom: 30px;
-  margin: 0 0 0 -64px;
-  opacity: 0.55;
-}
+.joy-base.active { opacity: 1; border-color: rgba(255, 240, 230, 0.75); }
 .joy-knob {
   width: 58px; height: 58px;
   border-radius: 50%;
@@ -100,7 +97,22 @@ html, body, #root {
   border: 4px solid var(--red-900);
   box-shadow: 0 5px 0 var(--red-900);
   font-size: 40px;
+  flex-direction: column;
 }
+.btn-attack.grab {
+  background: radial-gradient(circle at 40% 30%, #ffe28a, var(--gold) 55%, #b9851c);
+  box-shadow: 0 0 16px 3px rgba(242, 193, 78, 0.8), 0 5px 0 var(--red-900);
+}
+.btn-attack-icon { line-height: 1; }
+.combo { display: flex; gap: 5px; margin-top: 4px; }
+.combo i {
+  width: 10px; height: 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid var(--red-900);
+}
+.combo i.on { background: var(--ink); }
+.combo i.next { background: var(--red-500); }
+.actions.disabled { opacity: 0.4; pointer-events: none; }
 
 .btn-ult {
   left: 0; top: 0;
@@ -123,6 +135,52 @@ html, body, #root {
 @keyframes pulse {
   50% { box-shadow: 0 0 16px 3px rgba(242, 193, 78, 0.8), 0 4px 0 var(--red-900); }
 }
+
+/* ---- ХП над головами и цифры урона ---- */
+.overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.hpbar {
+  position: absolute; left: 0; top: 0;
+  width: 84px; margin-left: -42px; margin-top: -30px;
+  text-align: center;
+  will-change: transform;
+}
+.hpbar-name {
+  font-size: 12px; font-weight: 600; line-height: 1.1;
+  text-shadow: 0 1px 0 #000, 0 0 3px #000;
+}
+.hpbar-track {
+  position: relative; height: 14px; margin-top: 2px;
+  background: #1a0507; border: 2px solid #1a0507;
+}
+.hpbar-fill { height: 100%; transition: width 0.12s; }
+.ally .hpbar-fill { background: linear-gradient(#6fe86a, #2fae3a); }
+.enemy .hpbar-fill { background: linear-gradient(#ff6b6b, #c42a35); }
+.hpbar-text {
+  position: absolute; inset: 0;
+  font-size: 11px; font-weight: 600; line-height: 10px;
+  text-shadow: 0 1px 0 #000;
+}
+.dmg {
+  position: absolute; left: 0; top: 0;
+  width: 80px; margin-left: -40px; margin-top: -14px;
+  text-align: center;
+  font-size: 22px; font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 0 #000, 0 0 4px #000;
+  will-change: transform, opacity;
+}
+.dmg-grab { color: var(--gold); font-size: 20px; }
+.dmg-taken { color: #ff5a5f; }
+
+/* ---- смерть ---- */
+.death {
+  position: absolute; left: 50%; top: 32%;
+  transform: translateX(-50%);
+  text-align: center; pointer-events: none;
+  text-shadow: 0 3px 0 var(--red-900), 0 0 8px #000;
+}
+.death-title { font-size: 34px; font-weight: 600; color: #ff5a5f; letter-spacing: 0.04em; }
+.death-timer { font-size: 20px; margin-top: 4px; }
 
 /* ---- портрет: просим повернуть ---- */
 .rotate-hint {
