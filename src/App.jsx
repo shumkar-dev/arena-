@@ -10,7 +10,7 @@ import Rating from './ui/menu/Rating.jsx';
 import { loadPrefs, savePrefs } from './ui/prefs.js';
 import { sound } from './game/sound.js';
 import { rankOf, rewardFor, isRanked, botSkill } from './rating/ranks.js';
-import { playerDucks, pickBotNames, applyMatch, flush } from './rating/store.js';
+import { playerDucks, pickBotNames, applyMatch, syncPlayer } from './rating/store.js';
 import DuckIcon from './ui/DuckIcon.jsx';
 import NameModal from './ui/menu/NameModal.jsx';
 import { goLandscape, usePortrait } from './ui/orientation.js';
@@ -67,9 +67,11 @@ export default function App() {
 
   const update = useCallback((patch) => setPrefs((p) => ({ ...p, ...patch })), []);
   useEffect(() => { savePrefs(prefs); sound.setVolume(prefs.volume); }, [prefs]);
-  useEffect(() => { flush(); }, []);   // отправить то, что не ушло в прошлый раз
+
 
   const playerName = prefs.playerName.trim() || 'Игрок';
+  // отправить то, что не ушло в прошлый раз, и записать себя в общую таблицу
+  useEffect(() => { if (prefs.playerName.trim()) syncPlayer(playerName); }, [playerName]);
   const needName = !prefs.playerName.trim() && !view.startsWith('arena') && !params.has('autoplay');   // первый вход — спросить ник
 
   // на каждый матч: соперники твоего уровня из рейтинга и мастерство ботов по твоему званию

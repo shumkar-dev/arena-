@@ -23,11 +23,11 @@
 ## Таблица рейтинга (Supabase)
 Без настройки рейтинг хранится на устройстве. Чтобы таблица стала общей:
 1. В Supabase: **SQL Editor** → вставить [docs/supabase.sql](docs/supabase.sql) → **Run**.
-2. **Project Settings → API**: скопировать *Project URL* и ключ *anon public*.
-3. На GitHub: **Settings → Secrets and variables → Actions → Variables** → добавить `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY`. После следующего деплоя таблица общая.
+2. **Project Settings → API Keys**: скопировать *Project URL* (`https://<id>.supabase.co`, хвост `/rest/v1/` можно не убирать) и ключ *publishable* (`sb_publishable_…`; старый *anon public* тоже подойдёт).
+3. На GitHub: **Settings → Secrets and variables → Actions → Variables** → добавить `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY`. После следующего деплоя таблица общая: на экране «Рейтинг» справа вверху — «Общая таблица», при ошибке там же виден её код.
 Для локальной разработки — те же две строки в файле `.env.local`.
 
-Ключ *anon* публичный (он всё равно виден в коде страницы): писать в таблицу напрямую нельзя, утки меняются только через функцию `arena_add_ducks`, не больше чем на 15 за раз.
+Ключ *publishable* / *anon* публичный (он всё равно виден в коде страницы): писать в таблицу напрямую нельзя, утки меняются только через функцию `arena_add_ducks`, не больше чем на 15 за раз.
 
 ## Баланс
 Таблица героев — [docs/BALANCE.md](docs/BALANCE.md). Она собирается из папок героев командой `npm run balance`. В игре та же таблица открывается кнопкой «Баланс» на экране выбора.

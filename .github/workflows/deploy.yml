@@ -26,9 +26,11 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          # таблица рейтинга (Supabase); без них рейтинг работает только на устройстве
+          # таблица рейтинга (Supabase): URL проекта и ключ (publishable sb_publishable_… или старый anon);
+          # без них рейтинг работает только на устройстве
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
