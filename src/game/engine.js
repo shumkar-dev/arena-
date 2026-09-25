@@ -17,6 +17,7 @@ import { sound } from './sound.js';
 // options: { modeId, heroId, botHeroId, playerName, autoplay, fast }
 //   autoplay — локальным бойцом тоже управляет бот (автотесты, прогон баланса)
 //   fast     — шагов симуляции на кадр (ускоренная прокрутка для автотестов)
+//   quality  — 'high' (тени, чёткость) или 'low' (для слабых телефонов)
 // ============================================================
 
 const CAM_OFFSET = new THREE.Vector3(0, 14.5, 9.5);
@@ -32,8 +33,9 @@ export function createGame(mount, input, onHud, options = {}) {
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-  renderer.shadowMap.enabled = true;
+  const low = options.quality === 'low';
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, low ? 1 : 1.75));
+  renderer.shadowMap.enabled = !low;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const dom = renderer.domElement;
   dom.style.width = '100%';
