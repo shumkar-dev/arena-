@@ -1,6 +1,6 @@
 import { resolveCollisions } from '../game/arena.js';
 import { createRemoteController } from '../game/controllers.js';
-import { encodeCmd } from './protocol.js';
+import { encodeCmd, applyFighterDiff, unpackFighter } from './protocol.js';
 
 // ============================================================
 // СИНХРОНИЗАЦИЯ С СЕРВЕРОМ — для сетевого матча на устройстве.
@@ -13,9 +13,15 @@ import { encodeCmd } from './protocol.js';
 //     плавно, даже если снимки приходят неровно;
 //   • свой боец двигается сразу по джойстику (предсказание), а расхождение
 //     с сервером плавно убирается (сверка по номеру команды).
+//
+// Трафик: снимки 15 раз в секунду и только изменения (protocol.js); команды — при изменении
+// джойстика, но не чаще 20 и не реже 10 раз в секунду. Пришло несколько снимков разом
+// (связь подвисла) — изменения применяются все, а рисуем по самому свежему: старые пропускаем.
 // ============================================================
 
-const INTERP = 0.1;          // на сколько секунд в прошлом рисуем соперника
+const INTERP = 0.15;         // на сколько секунд в прошлом рисуем остальных (снимки идут раз в 67 мс)
+const SEND_MIN = 0.05;        // команды не чаще 20 раз в секунду…
+const SEND_MAX = 0.1;        // …и не реже, чтобы сервер знал, какие снимки дошли
 const SNAP_DIST = 2.5;       // расхождение больше — прыгаем сразу, меньше — плавно
 const CORR_RATE = 10;        // скорость плавной поправки, 1/с
 
@@ -46,6 +52,7 @@ export function createNetSync({ match, player, net }) {
   const remotes = new Map();
   for (const f of fighters) if (f !== player && f.kit) remotes.set(f, createRemoteController());
 
+  const packed = [];           // состояние бойцов из снимков (компактные массивы, по изменениям)
   const buffer = [];           // снимки для интерполяции: { tm, f }
   let offset = null;           // время сервера − время устройства, с
   let seq = 0;
@@ -101,17 +108,23 @@ export function createNetSync({ match, player, net }) {
     }
   };
 
-  const onSnap = (m) => {
-    const target = m.tm - now();
-    offset = offset == null ? target : offset + (target - offset) * 0.1;
-    buffer.push({ tm: m.tm, f: m.f });
-    while (buffer.length > 2 && buffer[1].tm < m.tm - 1) buffer.shift();
+  const onSnap = ([, , tmMs, ack, deltas, ev, extra]) => {
+    const tm = tmMs / 1000;
+    // часы сервера: свежий снимок сразу сдвигает оценку вперёд, запоздавшие — едва-едва.
+    // Так после затора рисуем по свежим данным, а не догоняем старые.
+    const target = tm - now();
+    offset = offset == null || target > offset ? target : offset + (target - offset) * 0.02;
 
-    m.f.forEach((s, i) => applyState(fighters[i], s));
-    if (m.sc) match.state.kills = { ...m.sc };
-    if (m.pk) world.pickups.spots.forEach((sp, i) => { sp.active = m.pk[i] === '1'; });
+    for (const d of deltas) applyFighterDiff(packed[d[0]] ??= [], d[1], d.slice(2));
+    const states = fighters.map((_, i) => (packed[i] ? unpackFighter(packed[i]) : null));
+    buffer.push({ tm, f: states });
+    while (buffer.length > 2 && buffer[1].tm < tm - 1) buffer.shift();
 
-    for (const e of m.ev) {
+    states.forEach((s, i) => { if (s) applyState(fighters[i], s); });
+    if (extra?.sc) match.state.kills = { ...extra.sc };
+    if (extra?.pk) world.pickups.spots.forEach((sp, i) => { sp.active = extra.pk[i] === '1'; });
+
+    for (const e of ev) {
       const f = fighters[e[1]];
       if (!f) continue;
       if (e[0] === 'd') {
@@ -121,11 +134,11 @@ export function createNetSync({ match, player, net }) {
       }
       else if (e[0] === 'h') match.events.push({ type: 'heal', target: f, amount: e[2] });
       else if (e[0] === 'say') match.events.push({ type: 'say', f, text: e[2] });
-      else if (e[0] === 'a' && f !== player) remotes.get(f).queue.push({ attack: vecOf(e[2]) });
-      else if (e[0] === 'u' && f !== player) remotes.get(f).queue.push({ ult: vecOf(e[2]) });
+      else if (e[0] === 'a' && f !== player) remotes.get(f)?.queue.push({ attack: e.length > 2 ? { x: Math.sin(e[2] / 100), z: Math.cos(e[2] / 100) } : null });
+      else if (e[0] === 'u' && f !== player) remotes.get(f)?.queue.push({ ult: e.length > 2 ? { x: e[2] / 100, z: e[3] / 100 } : null });
     }
 
-    if (me >= 0) reconcile(m.f[me], m.ack);
+    if (me >= 0 && states[me]) reconcile(states[me], ack);
   };
 
   // итог решает сервер: победители и места героев (по порядку мест)
@@ -143,13 +156,22 @@ export function createNetSync({ match, player, net }) {
   return {
     remotes,
 
-    /** Обёртка над кнопками: каждую команду — на сервер, с номером. */
+    /** Обёртка над кнопками: команды — на сервер, с номером. Удар и ульта — сразу,
+     *  движение — когда изменилось (не чаще SEND_MIN), иначе раз в SEND_MAX. */
     wrapLocal(base) {
+      let lastSent = -1, lastKey = '';
       return {
         command(dt, w) {
           const cmd = base.command(dt, w);
-          seq += 1;
-          net.send(encodeCmd(cmd, seq));
+          const t = now();
+          const key = `${Math.round(cmd.moveX * 20)},${Math.round(cmd.moveZ * 20)},${cmd.aimDir ? Math.round(Math.atan2(cmd.aimDir.x, cmd.aimDir.z) * 20) : '-'}`;
+          const oneShot = cmd.attack !== undefined || cmd.ult !== undefined;
+          if (oneShot || (key !== lastKey && t - lastSent >= SEND_MIN) || t - lastSent >= SEND_MAX) {
+            seq += 1;
+            net.send(encodeCmd(cmd, seq, net.lastSnap));
+            lastSent = t;
+            lastKey = key;
+          }
           return cmd;
         },
       };

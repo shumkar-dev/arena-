@@ -10,12 +10,14 @@ export function createNet(url = SERVER_URL) {
   const handlers = new Map();          // тип сообщения → Set(функций)
   let ws = null;
   let pingTimer = 0;
+  const pings = [];
 
   const emit = (type, msg) => { for (const fn of handlers.get(type) ?? []) fn(msg); };
 
   const net = {
     status: 'idle',     // idle | connecting | open | closed
-    ping: null,         // мс туда-обратно
+    ping: null,         // мс туда-обратно: сколько идёт сообщение до сервера и ответ обратно (медиана 5 замеров)
+    lastSnap: 0,        // номер последнего полученного снимка — уходит серверу в командах
 
     /** Подписка на сообщения сервера и на 'open' / 'close' / 'ping'. Вернёт отписку. */
     on(type, fn) {
@@ -30,15 +32,30 @@ export function createNet(url = SERVER_URL) {
       ws = new WebSocket(url);
       ws.onopen = () => {
         net.status = 'open';
+        pings.length = 0;
+        net.lastSnap = 0;
         emit('open');
         const ping = () => net.send({ t: 'ping', c: performance.now() });
         ping();
-        pingTimer = setInterval(ping, 2000);
+        pingTimer = setInterval(ping, 1000);
       };
       ws.onmessage = (e) => {
         let m;
         try { m = JSON.parse(e.data); } catch { return; }
-        if (m.t === 'pong') { net.ping = Math.round(performance.now() - m.c); emit('ping', net.ping); return; }
+        // снимок боя — массив [1, номер, …] (компактный формат, см. protocol.js)
+        if (Array.isArray(m)) {
+          if (m[0] === 1) { net.lastSnap = m[1]; emit('s', m); }
+          return;
+        }
+        if (m.t === 'pong') {
+          // честный пинг: сообщение идёт в общей очереди со снимками, так что забитый канал видно
+          pings.push(performance.now() - m.c);
+          if (pings.length > 5) pings.shift();
+          net.ping = Math.round([...pings].sort((a, b) => a - b)[pings.length >> 1]);
+          emit('ping', net.ping);
+          return;
+        }
+        if (m.t === 'start') net.lastSnap = 0;   // у нового боя снимки считаются заново
         emit(m.t, m);
       };
       ws.onclose = () => {
