@@ -61,8 +61,10 @@ export function createNet(url = SERVER_URL) {
       net.connect();
     },
 
-    create(mode, name, hero, ducks) { net.whenOpen({ t: 'create', mode, name, hero, ducks }); },
+    create(name, hero, ducks) { net.whenOpen({ t: 'create', name, hero, ducks }); },
     join(code, name, hero, ducks) { net.whenOpen({ t: 'join', code, name, hero, ducks }); },
+    mode(mode) { net.send({ t: 'mode', mode }); },
+    hero(hero) { net.send({ t: 'hero', hero }); },
     team(team) { net.send({ t: 'team', team }); },
     start() { net.send({ t: 'start' }); },
     leave() { net.send({ t: 'leave' }); },

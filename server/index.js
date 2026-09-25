@@ -68,12 +68,14 @@ function createRemoteInput() {
   return inp;
 }
 
-function createRoom(code, modeId) {
-  const n = slotsOf(modeId);
+const MAX_PLAYERS = 4;
+
+function createRoom(code, initialMode) {
+  let modeId = initialMode;       // режим меняет создатель прямо в лобби (setMode)
   const room = {
     code,
-    modeId,
-    slots: Array(n).fill(null),   // игроки по местам: { ws, name, hero, ducks, input } | null — место бота
+    get modeId() { return modeId; },
+    slots: Array(slotsOf(modeId)).fill(null),   // игроки по местам: { ws, name, hero, ducks, input } | null — место бота
     host: null,                   // ws создателя (уйдёт — хозяином станет следующий)
     phase: 'lobby',               // lobby | play
     match: null,
@@ -94,16 +96,54 @@ function createRoom(code, modeId) {
       }
     },
 
-    // новое место: в 2 на 2 — в команду, где людей меньше
-    add(player) {
+    // посадить на свободное место: в 2 на 2 — в команду, где людей меньше
+    seat(player) {
       const free = room.slots.map((p, i) => (p ? -1 : i)).filter((i) => i >= 0);
       if (!free.length) return false;
       const count = (team) => room.slots.filter((p, i) => p && teamOfSlot(modeId, i) === team).length;
       free.sort((a, b) => count(teamOfSlot(modeId, a)) - count(teamOfSlot(modeId, b)) || a - b);
       room.slots[free[0]] = player;
+      return true;
+    },
+
+    // новый игрок; в комнате до 4 человек. Мест в режиме не хватает (третий в 1 на 1) —
+    // комната сама переходит в 2 на 2, создатель потом может выбрать другой режим
+    add(player) {
+      if (room.humans().length >= MAX_PLAYERS) return false;
+      if (!room.slots.includes(null)) room.reseat('teams');
+      room.seat(player);
       player.ws.room = room;
       if (!room.host) room.host = player.ws;
       return true;
+    },
+
+    // пересадить всех под режим: места и боты подстраиваются, порядок игроков сохраняется
+    reseat(mode) {
+      const people = room.humans();
+      modeId = mode;
+      room.slots = Array(slotsOf(modeId)).fill(null);
+      for (const p of people) room.seat(p);
+    },
+
+    // создатель выбирает режим в лобби (и между боями)
+    setMode(ws, mode) {
+      if (ws !== room.host || room.phase !== 'lobby') return;
+      const want = onlineModeId(mode);
+      if (want === modeId) return;
+      if (room.humans().length > slotsOf(want)) {
+        send(ws, { t: 'err', msg: `В режиме «${modeById(want).name}» мест меньше, чем игроков в комнате.` });
+        return;
+      }
+      room.reseat(want);
+      room.sendLobby();
+    },
+
+    // любой игрок меняет героя в лобби (и между боями)
+    setHero(ws, hero) {
+      const p = room.slots[room.slotOf(ws)];
+      if (!p || room.phase !== 'lobby') return;
+      p.hero = validHero(hero);
+      room.sendLobby();
     },
 
     setTeam(ws, team) {
@@ -262,6 +302,7 @@ function onMessage(ws, msg) {
       return;
     case 'create': {
       if (room) room.remove(ws);
+      // режим выбирают уже в лобби; старые версии игры присылают его сразу
       const r = createRoom(newCode(), onlineModeId(msg.mode));
       rooms.set(r.code, r);
       r.add(newPlayer(ws, msg));
@@ -275,12 +316,18 @@ function onMessage(ws, msg) {
       if (!r) { send(ws, { t: 'err', msg: 'Комната не найдена. Проверь код.' }); return; }
       if (r === room) { r.sendLobby(); return; }
       if (r.phase === 'play') { send(ws, { t: 'err', msg: 'В этой комнате идёт бой — зайди, когда он закончится.' }); return; }
-      if (!r.slots.includes(null)) { send(ws, { t: 'err', msg: 'В комнате нет свободных мест.' }); return; }
+      if (r.humans().length >= MAX_PLAYERS) { send(ws, { t: 'err', msg: 'В комнате уже 4 игрока — мест нет.' }); return; }
       if (room) room.remove(ws);
       r.add(newPlayer(ws, msg));
       r.sendLobby();
       return;
     }
+    case 'mode':
+      room?.setMode(ws, msg.mode);
+      return;
+    case 'hero':
+      room?.setHero(ws, msg.hero);
+      return;
     case 'team':
       if (msg.team === 'blue' || msg.team === 'red') room?.setTeam(ws, msg.team);
       return;

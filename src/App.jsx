@@ -163,7 +163,7 @@ export default function App() {
         onExit={leaveNet} onAgain={() => setView('friend')} againLabel="В комнату" reward={netReward} notice={netNotice} toast={netToast} audio={audio} />
     );
   } else if (view === 'friend') {
-    body = <FriendPlay net={net} lobby={lobby} heroId={prefs.heroId} playerName={playerName} ducks={ducks} onLeave={() => { net.leave(); setLobby(null); }} onBack={toMenu} />;
+    body = <FriendPlay net={net} lobby={lobby} heroId={prefs.heroId} playerName={playerName} ducks={ducks} onHero={(id) => update({ heroId: id })} onLeave={() => { net.leave(); setLobby(null); }} onBack={toMenu} />;
   } else if (view === 'arena') {
     body = <Arena key={`${prefs.modeId}-${prefs.heroId}-${round}`} modeId={prefs.modeId} heroId={prefs.heroId} options={options} debug={debug} onExit={toMenu} onAgain={again} onResult={onResult} audio={audio} />;
   } else if (view === 'modes') {
