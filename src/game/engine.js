@@ -6,6 +6,7 @@ import { modeById } from '../modes/index.js';
 import { createLocalController, createBotController, ultPoint } from './controllers.js';
 import { createOnlineMode } from '../net/protocol.js';
 import { createNetSync } from '../net/sync.js';
+import { matchParticipants } from './results.js';
 import { createOverlay } from './overlay.js';
 import { createEffects } from './effects.js';
 import { createAim } from './aim.js';
@@ -21,7 +22,7 @@ import { sound } from './sound.js';
 //   autoplay — локальным бойцом тоже управляет бот (автотесты, прогон баланса)
 //   fast     — шагов симуляции на кадр (ускоренная прокрутка для автотестов)
 //   quality  — 'high' (тени, чёткость) или 'low' (для слабых телефонов)
-//   net      — сетевой матч: { conn, you, players } (src/net); бой считает сервер
+//   net      — сетевой матч: { conn, modeId, roster, you } (src/net); бой считает сервер
 // ============================================================
 
 const CAM_OFFSET = new THREE.Vector3(0, 14.5, 9.5);
@@ -29,11 +30,11 @@ const END_DELAY = 1.4;   // сколько секунд после победы 
 
 export function createGame(mount, input, onHud, options = {}) {
   const net = options.net ?? null;
-  const mode = net ? createOnlineMode({ players: net.players, you: net.you }) : modeById(options.modeId);
-  // игрок на севере (сетевой матч) смотрит на арену с другой стороны — «вверх» у всех к врагу
-  const flip = !!net && net.you === 1;
-  const fs = flip ? -1 : 1;
-  const camOffset = CAM_OFFSET.clone().setZ(CAM_OFFSET.z * fs);
+  const mode = net ? createOnlineMode({ modeId: net.modeId, roster: net.roster, you: net.you }) : modeById(options.modeId);
+  // игрок, который начинает на северной половине (сетевой матч), смотрит на арену
+  // с другой стороны — у всех «вверх» к врагу; решается после расстановки бойцов
+  let flip = false, fs = 1;
+  const camOffset = CAM_OFFSET.clone();
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x9fb4c8);
@@ -85,6 +86,7 @@ export function createGame(mount, input, onHud, options = {}) {
   mode.setup(match, { heroId: options.heroId, botHeroId: options.botHeroId, playerName: options.playerName, botNames: options.botNames });
 
   const player = match.fighters.find((f) => f.control === 'local') ?? match.fighters[0];
+  if (net && player.spawn.z < 0) { flip = true; fs = -1; camOffset.setZ(-CAM_OFFSET.z); }
   const sync = net ? createNetSync({ match, player, net: net.conn }) : null;
   const controllers = new Map();
   for (const f of match.fighters) {
@@ -170,7 +172,8 @@ export function createGame(mount, input, onHud, options = {}) {
     // высокие кроны между камерой (она южнее) и героем — полупрозрачные
     for (const o of currentMap().occluders ?? []) {
       const p = o.group.position;
-      const hide = Math.abs(p.x - player.pos.x) < 2.2 && p.z > player.pos.z - 0.5 && p.z - player.pos.z < 5;
+      const ahead = (p.z - player.pos.z) * fs;    // насколько крона ближе к камере, чем герой
+      const hide = Math.abs(p.x - player.pos.x) < 2.2 && ahead > -0.5 && ahead < 5;
       const target = hide ? 0.3 : 1;
       for (const m of o.mats) m.opacity += (target - m.opacity) * Math.min(1, dt * 8);
     }
@@ -209,21 +212,9 @@ export function createGame(mount, input, onHud, options = {}) {
   };
 
   // все герои матча с их итогом — по нему рейтинг раздаёт уток и ботам
-  const participants = (res) => {
-    const heroes = match.fighters.filter((f) => f.kit);
-    const placeOf = new Map((res.places ?? []).map((p) => [p.f, p.place]));
-    // кто ещё не выбыл, когда матч кончился (ты выбыл раньше) — занимают свободные места по здоровью
-    const free = heroes.map((_, i) => i + 1).filter((p) => ![...placeOf.values()].includes(p));
-    heroes.filter((f) => !placeOf.has(f)).sort((a, b) => b.hp - a.hp).forEach((f, i) => placeOf.set(f, free[i] ?? heroes.length));
-    return heroes.map((f) => ({
-      name: f.name,
-      isPlayer: f === player,
-      isBot: f.control === 'bot',
-      win: res.winners.includes(f.team),
-      place: placeOf.get(f),
-      topKills: f.kills > 0 && heroes.every((o) => o === f || o.kills <= f.kills),
-    }));
-  };
+  const participants = (res) => matchParticipants(match, res).map(({ f, ...p }) => ({
+    ...p, isPlayer: f === player, isBot: f.control === 'bot',
+  }));
 
   const loop = () => {
     raf = requestAnimationFrame(loop);

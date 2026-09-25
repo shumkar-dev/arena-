@@ -1,6 +1,5 @@
 import { ARENA } from '../game/arena.js';
-import { heroById } from '../heroes/index.js';
-import { randomHeroId, botNames, creditKill } from './common.js';
+import { rosterOf, sideFor, creditKill } from './common.js';
 
 // ============================================================
 // 1 НА 1 — ДУЭЛЬ. Бой до 3 убийств, без аптечек и усилителей.
@@ -19,16 +18,16 @@ export default {
   icon: '⚔️',
   map: 'road',
 
-  setup(match, { heroId, botHeroId, playerName, botNames: preferred }) {
-    const [botName] = botNames(1, preferred);
-    match.addHero(heroId, {
-      name: playerName ?? heroById(heroId).name, team: 'blue', control: 'local', side: 'self',
-      spawn: { x: 0, z: ARENA.halfL - 3, facing: Math.PI },
-    });
-    match.addHero(botHeroId ?? randomHeroId(), {
-      name: botName, team: 'red', control: 'bot', side: 'enemy',
-      spawn: { x: 0, z: -ARENA.halfL + 3, facing: 0 },
-    });
+  slots: 2,
+  teamOf: (i) => TEAMS[i],
+
+  // место 0 — синие на юге, место 1 — красные на севере
+  setup(match, opts) {
+    const { roster, you } = rosterOf(opts, 2, { botHeroId: opts.botHeroId });
+    const spawns = [{ x: 0, z: ARENA.halfL - 3, facing: Math.PI }, { x: 0, z: -ARENA.halfL + 3, facing: 0 }];
+    roster.forEach((r, i) => match.addHero(r.heroId, {
+      name: r.name, team: TEAMS[i], control: r.control, side: sideFor(i, you, (j) => TEAMS[j]), spawn: spawns[i],
+    }));
     match.state = { kills: { blue: 0, red: 0 } };
   },
 

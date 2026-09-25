@@ -9,7 +9,8 @@ import MatchResult from './MatchResult.jsx';
 const KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
 
 // Экран боя: 3D-арена, джойстик, кнопки, счёт режима, итог матча.
-export default function Arena({ modeId, heroId, options, debug, onExit, onAgain, onResult, waitingAgain, notice }) {
+// reward — утки, если их считает не onResult, а сетевой итог (App); toast — короткое сообщение сверху
+export default function Arena({ modeId, heroId, options, debug, onExit, onAgain, onResult, againLabel, reward: rewardProp, notice, toast }) {
   const hero = heroById(heroId);
   const mountRef = useRef(null);
   const input = useRef({ moveX: 0, moveY: 0, attack: false, ult: false, ultAim: null, ultFire: null }).current;
@@ -84,6 +85,7 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
         </div>
       )}
       {hud.ping != null && <div className="net-ping">📶 {hud.ping} мс</div>}
+      {toast && <div className="net-toast">{toast}</div>}
       {notice && (
         <div className="result lose">
           <div className="result-box">
@@ -92,7 +94,7 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
           </div>
         </div>
       )}
-      {hud.result && !notice && <MatchResult result={hud.result} reward={reward} waiting={waitingAgain} onAgain={onAgain} onExit={onExit} />}
+      {hud.result && !notice && <MatchResult result={hud.result} reward={rewardProp ?? reward} againLabel={againLabel} onAgain={onAgain} onExit={onExit} />}
     </>
   );
 }
