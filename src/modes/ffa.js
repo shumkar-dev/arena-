@@ -22,9 +22,9 @@ export default {
   map: 'park',
   showPlace: true,          // в итоге показывать место, а не «Поражение»
 
-  setup(match, { heroId, playerName }) {
+  setup(match, { heroId, playerName, botNames: preferred }) {
     const map = currentMap();
-    const names = botNames(3);
+    const names = botNames(3, preferred);
     const spawns = map.spawns;
     match.addHero(heroId, {
       name: playerName ?? heroById(heroId).name, team: TEAMS[0], control: 'local', side: 'self',
