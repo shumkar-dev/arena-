@@ -6,8 +6,10 @@ import { modeById } from '../modes/index.js';
 // Транспорт — WebSocket, сообщения — JSON { t: тип, ... }.
 //
 // Игра → сервер
-//   create { name, hero, mode, ducks }  создать комнату в режиме mode (duel | teams | ffa)
+//   create { name, hero, ducks }       создать комнату (режим — потом, в лобби; по умолчанию 1 на 1)
 //   join   { code, name, hero, ducks }  войти по коду
+//   mode   { mode }                    создатель выбирает режим в лобби: duel | teams | ffa
+//   hero   { hero }                    сменить своего героя в лобби (и между боями)
 //   team   { team }                    перейти в команду (2 на 2: blue | red)
 //   start                              создатель комнаты начинает бой (пустые места — боты)
 //   in     { s, mx, mz, ad?, a?, u? }   команда бойца (encodeCmd), s — номер по порядку
