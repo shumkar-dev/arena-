@@ -67,18 +67,31 @@ export function createEffects(scene) {
       add(g, 1.4, (k) => { mat.opacity = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4; });
     },
 
-    // шмель пикирует в точку и лопается — взрыв уже случился, это его след
-    bee(x, z) {
+    // шмель летит дугой из (x0, z0) в (x1, z1) за dur секунд и в конце пикирует в землю
+    beeFlight(x0, z0, x1, z1, dur) {
       const bee = createBee();
       bee.root.scale.setScalar(2.2);
-      bee.root.position.set(x, 1.4, z);
-      bee.root.rotation.x = 0.9;
-      add(bee.root, 0.35, (k, age) => {
+      const yaw = Math.atan2(x1 - x0, z1 - z0);
+      add(bee.root, dur, (k, age) => {
         bee.animate(age);
-        bee.root.position.y = 1.4 - k * 1.2;
-        bee.root.scale.setScalar(2.2 * (1 + k * 0.6));
-        bee.root.visible = k < 0.85;
+        const e = k * k * (3 - 2 * k);                    // плавный разгон и торможение
+        bee.root.position.set(
+          x0 + (x1 - x0) * e + Math.sin(age * 9) * 0.12,  // лёгкое рыскание
+          3.2 + Math.sin(k * Math.PI) * 1.6 - k * k * 2.6, // дуга и пике к земле
+          z0 + (z1 - z0) * e,
+        );
+        bee.root.rotation.set(0.15 + k * k * 0.9, yaw, Math.sin(age * 7) * 0.12);
       });
+    },
+
+    // пульсирующий круг на земле: сюда прилетит удар
+    marker(x, z, radius, dur, color = 0xffc23a) {
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, side: THREE.DoubleSide, depthWrite: false });
+      const ring = new THREE.Mesh(ringGeo, mat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, 0.07, z);
+      ring.scale.setScalar(radius);
+      add(ring, dur, (k, age) => { mat.opacity = 0.45 + Math.sin(age * 18) * 0.35; });
     },
 
     // короткая вспышка-искра на месте удара

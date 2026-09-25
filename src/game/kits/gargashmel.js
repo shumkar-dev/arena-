@@ -4,8 +4,9 @@ import { createChain, aimAttack, faceTowards, enemiesInCone, enemiesInRadius } f
 // ПРИЁМЫ ГАРГАШМЕЛЯ
 // Атака — удар щупальцем вблизи, задевает всех в конусе.
 // Третья — такой же удар, после которого базовая атака на 4 с вдвое быстрее.
-// Ульта — большой шмель прилетает в выбранную точку и мгновенно взрывается.
-// Точку выбирают, зажав кнопку ульты и оттянув её.
+// Ульта — большой шмель с нарастающим жужжанием летит в выбранную точку
+// и взрывается, как только долетает. Точку выбирают, зажав кнопку ульты и оттянув её.
+// Пока шмель в пути, точка подсвечена — от него можно успеть убежать.
 // ============================================================
 
 export const GARGASHMEL = {
@@ -25,12 +26,20 @@ export const GARGASHMEL = {
   ultRadius: 2.6,
   ultDamage: 1800,
   castTime: 0.3,
+  beeBaseTime: 0.35,     // время полёта шмеля: база + расстояние / скорость
+  beeSpeed: 16,
 };
 
 export function createGargashmelKit(me) {
   const T = GARGASHMEL;
   const chain = createChain();
-  const s = { whipT: -1, side: 1, hitDone: false, special: false, ultCd: 0, castT: -1 };
+  const s = { whipT: -1, side: 1, hitDone: false, special: false, ultCd: 0, castT: -1, bee: null };
+
+  const explode = (world, x, z) => {
+    world.fx.explosion(x, z, T.ultRadius, 0xffc23a);
+    world.sfx('explosion', { size: 1 });
+    for (const e of enemiesInRadius(me, world, x, z, T.ultRadius)) world.damage(e, T.ultDamage, me, 'grab');
+  };
 
   const speedK = () => (me.hasEffect('frenzy') ? T.frenzyMul : 1);
 
@@ -39,6 +48,8 @@ export function createGargashmelKit(me) {
     ultRange: T.ultRange,
     // форма прицела ульты: круг взрыва в точке на расстоянии до ultRange
     ultShape: { type: 'circle', range: T.ultRange, radius: T.ultRadius },
+    // пока идёт атака — смотрит туда, куда целился, а не по джойстику
+    get lockFacing() { return s.whipT >= 0 ? s.aimAngle : null; },
     get busy() { return false; },
     get speedMul() { return 1; },
 
@@ -56,21 +67,27 @@ export function createGargashmelKit(me) {
       s.ultCd = T.ultCooldown;
       s.castT = 0;
       if (d > 0.5) faceTowards(me, x, z);
-      world.fx.explosion(x, z, T.ultRadius, 0xffc23a);
-      world.fx.bee(x, z);
-      world.sfx('bee');
-      world.sfx('explosion', { size: 1 });
-      for (const e of enemiesInRadius(me, world, x, z, T.ultRadius)) world.damage(e, T.ultDamage, me, 'grab');
+      const dur = T.beeBaseTime + Math.min(d, T.ultRange) / T.beeSpeed;
+      s.bee = { x, z, t: dur };
+      world.fx.beeFlight(me.pos.x, me.pos.z, x, z, dur);
+      world.fx.marker(x, z, T.ultRadius, dur);
+      world.sfx('beeFlight', { dur });
     },
 
     update(dt, world) {
       s.ultCd = Math.max(0, s.ultCd - dt);
       if (s.castT >= 0) { s.castT += dt / T.castTime; if (s.castT >= 1) s.castT = -1; }
+      // шмель долетел — взрыв; летит, даже если Гаргашмель уже выбыл
+      if (s.bee) {
+        s.bee.t -= dt;
+        if (s.bee.t <= 0) { explode(world, s.bee.x, s.bee.z); s.bee = null; }
+      }
       if (!me.alive) { s.whipT = -1; chain.clear(); return; }
 
       const free = s.whipT < 0 && me.canAct();
       if (chain.tick(dt, free)) {
         aimAttack(me, world, chain.dir, T.autoAim);
+        s.aimAngle = me.facing;
         s.whipT = 0;
         s.hitDone = false;
         world.sfx('whip');

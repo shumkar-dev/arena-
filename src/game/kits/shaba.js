@@ -46,6 +46,7 @@ export function createShabaKit(me) {
     ultCd: 0,
     queued: 0,         // нажатие, сделанное во время удара, выполнится сразу после него
     dir: null,         // направление нажатия; null — автоприцел
+    aimAngle: 0,       // куда направлена текущая атака
   };
 
   const enemies = (world) => world.fighters.filter((f) => f !== me && f.alive && f.team !== me.team);
@@ -90,6 +91,8 @@ export function createShabaKit(me) {
 
   const kit = {
     ultAim: 'tap',
+    // пока идёт удар или рывок — смотрит туда, куда бил, а не по джойстику
+    get lockFacing() { return s.action === 'punch' || s.action === 'lunge' ? s.aimAngle : null; },
     get busy() { return s.action === 'hold' || s.action === 'lunge'; },
     get speedMul() { return s.ultT > 0 ? T.ultSpeedMul : 1; },
 
@@ -110,6 +113,7 @@ export function createShabaKit(me) {
       s.queued = 0;
       if (s.dir) me.facing = Math.atan2(s.dir.x, s.dir.z);
       else autoAim(world);
+      s.aimAngle = me.facing;
       s.cd = T.attackCooldown;
       s.comboIdle = 0;
       s.actionT = 0;
