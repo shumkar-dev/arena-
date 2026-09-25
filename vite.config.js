@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// base './' — сборка работает и на GitHub Pages (/arena-/), и позже в Telegram Mini App
+// игра публикуется на https://shumkar-dev.github.io/arena-/
 export default defineConfig({
-  base: './',
+  base: '/arena-/',
   plugins: [react()],
   build: { chunkSizeWarningLimit: 900 }, // three.js сам по себе ~600 КБ
 });

@@ -268,28 +268,47 @@ export function createShaba() {
     sNeck.rotation.set(-0.15, 0, 0);
   };
 
-  // удар правой рукой поверх любой позы; k: 0..1 — прогресс удара
-  const overlayPunch = (k) => {
+  // удар поверх любой позы; k: 0..1 — прогресс, side: 1 — правая рука, −1 — левая
+  const overlayPunch = (k, side) => {
+    const a = side > 0 ? sArmR : sArmL;
     const s = Math.sin(k * Math.PI);
-    sArmR.sh.rotation.x = -1.55 * s + sArmR.sh.rotation.x * (1 - s);
-    sArmR.el.rotation.x = -0.2 * s;
-    sTorso.rotation.y = -0.35 * s;
+    a.sh.rotation.x = -1.55 * s + a.sh.rotation.x * (1 - s);
+    a.el.rotation.x = -0.2 * s;
+    sTorso.rotation.y = -0.35 * s * side;
+  };
+
+  // захват: обе руки вперёд, держит соперника перед собой; k: 0..1 — рывок, дальше удержание
+  const overlayGrab = (k, t) => {
+    const s = Math.min(1, k * 3);
+    const shake = k >= 1 ? Math.sin(t * 22) * 0.06 : 0;
+    for (const a of [sArmL, sArmR]) {
+      a.sh.rotation.x = -1.35 * s + a.sh.rotation.x * (1 - s) + shake;
+      a.sh.rotation.z = 0;
+      a.el.rotation.x = -0.35 * s;
+    }
+    sArmL.sh.rotation.z = -0.25 * s;
+    sArmR.sh.rotation.z = 0.25 * s;
+    sTorso.rotation.x = -0.12 * s;
+    sTorso.rotation.y = shake;
   };
 
   /**
-   * state: { t, stride, moving, riding, punch }
-   *  t      — время, с
-   *  stride — фаза шага (растёт с пройденной дистанцией)
-   *  moving — бежит ли персонаж
-   *  riding — ульта: верхом на баране
-   *  punch  — null или 0..1 прогресс удара
+   * state: { t, stride, moving, riding, punch, punchSide, grab }
+   *  t         — время, с
+   *  stride    — фаза шага (растёт с пройденной дистанцией)
+   *  moving    — бежит ли персонаж
+   *  riding    — ульта: верхом на баране
+   *  punch     — null или 0..1 прогресс удара
+   *  punchSide — 1 правая, −1 левая рука
+   *  grab      — null или прогресс захвата (0..1 рывок, 1 — удержание)
    */
-  const animate = ({ t, stride, moving, riding, punch }) => {
+  const animate = ({ t, stride, moving, riding, punch, punchSide = 1, grab = null }) => {
     resetRig();
     if (riding) poseRide(stride, moving);
     else if (moving) poseRun(stride);
     else poseIdle(t);
-    if (punch != null) overlayPunch(punch);
+    if (grab != null) overlayGrab(grab, t);
+    else if (punch != null) overlayPunch(punch, punchSide);
   };
 
   return { root, animate };
