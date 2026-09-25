@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { buildArena, ARENA } from './arena.js';
+import { buildArena, setMap, currentMap, ARENA } from './arena.js';
+import { mapById } from '../maps/index.js';
 import { createMatch } from './match.js';
 import { modeById } from '../modes/index.js';
 import { createLocalController, createBotController, ultPoint } from './controllers.js';
@@ -61,6 +62,7 @@ export function createGame(mount, input, onHud, options = {}) {
   sun.shadow.bias = -0.0005;
   scene.add(sun, sun.target);
 
+  setMap(mapById(mode.map));
   buildArena(scene);
 
   const overlay = createOverlay(mount);
@@ -128,7 +130,7 @@ export function createGame(mount, input, onHud, options = {}) {
     // --- модели ---
     for (const f of match.fighters) {
       if (f.kit) f.model.animate({ t, stride: f.stride, moving: f.moving, ...f.kit.pose() });
-      else f.model.animate?.({ t });
+      else f.model.animate?.({ t, stride: f.stride ?? 0, moving: !!f.moving, scared: f.scaredT > 0 });
       f.updateView(dt);
     }
 
@@ -149,6 +151,13 @@ export function createGame(mount, input, onHud, options = {}) {
     } else aim.hideUlt();
 
     updateCamera(dt);
+    // высокие кроны между камерой (она южнее) и героем — полупрозрачные
+    for (const o of currentMap().occluders ?? []) {
+      const p = o.group.position;
+      const hide = Math.abs(p.x - player.pos.x) < 2.2 && p.z > player.pos.z - 0.5 && p.z - player.pos.z < 5;
+      const target = hide ? 0.3 : 1;
+      for (const m of o.mats) m.opacity += (target - m.opacity) * Math.min(1, dt * 8);
+    }
     overlay.update(dt, camera, match.fighters);
 
     // --- HUD: ~10 раз в секунду и только при изменениях ---
@@ -166,8 +175,13 @@ export function createGame(mount, input, onHud, options = {}) {
         respawnIn: Number.isFinite(player.respawnIn) ? Math.ceil(player.respawnIn) : null,
         mode: mode.hud?.(match, player) ?? null,
         result: res && {
+          modeId: mode.id,
           win: res.winners.includes(player.team),
           place: res.places?.find((p) => p.f === player)?.place ?? null,
+          showPlace: !!mode.showPlace,
+          kills: player.kills,
+          // первое место по убийствам среди героев (для награды в «каждый сам за себя»)
+          topKills: player.kills > 0 && match.fighters.filter((f) => f.kit && f !== player).every((f) => f.kills <= player.kills),
           reason: res.reason ?? '',
         },
       };
