@@ -47,22 +47,44 @@ export default function App() {
   const netRef = useRef(null);
   if (!netRef.current) netRef.current = createNet();
   const net = netRef.current;
-  const [netGame, setNetGame] = useState(null);     // { you, players, n } — идёт сетевой бой
-  const [netWait, setNetWait] = useState(0);        // сколько игроков нажали «Ещё раз»
-  const [netNotice, setNetNotice] = useState('');   // «соперник вышел» и т. п.
+  const [lobby, setLobby] = useState(null);        // комната до боя: { code, mode, you, host, slots }
+  const [netGame, setNetGame] = useState(null);     // идёт сетевой бой: { modeId, you, host, roster, n }
+  const [netReward, setNetReward] = useState(null); // утки за последний сетевой бой
+  const [netNotice, setNetNotice] = useState('');   // связь потеряна — бой не продолжить
+  const [netToast, setNetToast] = useState('');     // «игрок вышел — за него бот»
+  const netGameRef = useRef(null);
+  netGameRef.current = netGame;
+  const nameRef = useRef('Игрок');
   useEffect(() => {
+    let toastTimer = 0;
+    const toast = (text) => { setNetToast(text); clearTimeout(toastTimer); toastTimer = setTimeout(() => setNetToast(''), 4000); };
     const offs = [
+      net.on('lobby', (m) => setLobby(m)),
       net.on('start', (m) => {
-        setNetGame((g) => ({ you: m.you, players: m.players, n: (g?.n ?? 0) + 1 }));
-        setNetWait(0);
+        setNetGame((g) => ({ modeId: m.mode, you: m.you, host: m.host, roster: m.roster, n: (g?.n ?? 0) + 1 }));
+        setNetReward(null);
         setNetNotice('');
         setView('arena-net');
       }),
-      net.on('again', (m) => setNetWait(m.n)),
-      net.on('left', () => setNetNotice('Соперник вышел из боя')),
-      net.on('close', () => setNetNotice((n) => n || 'Связь с сервером потеряна')),
+      // итог решил сервер: свои утки записываем сами, утки ботов — только создатель комнаты
+      // (иначе каждому боту начислили бы столько раз, сколько людей в комнате)
+      net.on('end', (m) => {
+        const g = netGameRef.current;
+        if (!g || !m.res?.[g.you]) return;
+        const entries = [{ name: nameRef.current, isPlayer: true, delta: m.res[g.you].delta }];
+        if (g.you === g.host) {
+          g.roster.forEach((r, i) => { if (r.bot && m.res[i]) entries.push({ name: r.name, isBot: true, delta: m.res[i].delta }); });
+        }
+        const { before, after } = applyMatch(entries, nameRef.current);
+        setDucks(after);
+        const was = rankOf(before), rank = rankOf(after);
+        setNetReward({ delta: entries[0].delta, after, rank, rankUp: rank.index > was.index, rankDown: rank.index < was.index });
+      }),
+      net.on('left', (m) => toast(`${m.name} вышел — за него играет бот`)),
+      net.on('err', (m) => toast(m.msg)),
+      net.on('close', () => { setLobby(null); setNetNotice((n) => n || 'Связь с сервером потеряна'); }),
     ];
-    return () => offs.forEach((off) => off());
+    return () => { clearTimeout(toastTimer); offs.forEach((off) => off()); };
   }, [net]);
 
   const update = useCallback((patch) => setPrefs((p) => ({ ...p, ...patch })), []);
@@ -70,6 +92,7 @@ export default function App() {
 
 
   const playerName = prefs.playerName.trim() || 'Игрок';
+  nameRef.current = playerName;
   // отправить то, что не ушло в прошлый раз, и записать себя в общую таблицу
   useEffect(() => { if (prefs.playerName.trim()) syncPlayer(playerName); }, [playerName]);
   const needName = !prefs.playerName.trim() && !view.startsWith('arena') && !params.has('autoplay');   // первый вход — спросить ник
@@ -113,21 +136,24 @@ export default function App() {
   const setMute = (v) => { sound.setMuted(v); setMuted(v); };
   const again = useCallback(() => setRound((r) => r + 1), []);
   const toMenu = useCallback(() => setView('main'), []);
-  const leaveNet = useCallback(() => { net.leave(); setNetGame(null); setNetNotice(''); setView('main'); }, [net]);
+  const leaveNet = useCallback(() => {
+    net.leave(); setLobby(null); setNetGame(null); setNetNotice(''); setView('main');
+  }, [net]);
   const netOptions = useMemo(() => netGame && ({
     quality: prefs.quality,
-    net: { conn: net, you: netGame.you, players: netGame.players },
+    net: { conn: net, modeId: netGame.modeId, roster: netGame.roster, you: netGame.you },
   }), [netGame, prefs.quality, net]);
+
   const play = () => { setRound((r) => r + 1); setView('arena'); };
 
   let body;
   if (view === 'arena-net' && netGame) {
     body = (
-      <Arena key={`net-${netGame.n}`} modeId="online" heroId={netGame.players[netGame.you].hero} options={netOptions} debug={debug}
-        onExit={leaveNet} onAgain={() => net.again()} waitingAgain={netWait > 0} notice={netNotice} />
+      <Arena key={`net-${netGame.n}`} modeId="online" heroId={netGame.roster[netGame.you].hero} options={netOptions} debug={debug}
+        onExit={leaveNet} onAgain={() => setView('friend')} againLabel="В комнату" reward={netReward} notice={netNotice} toast={netToast} />
     );
   } else if (view === 'friend') {
-    body = <FriendPlay net={net} heroId={prefs.heroId} playerName={playerName} onBack={toMenu} />;
+    body = <FriendPlay net={net} lobby={lobby} heroId={prefs.heroId} playerName={playerName} ducks={ducks} onLeave={() => { net.leave(); setLobby(null); }} onBack={toMenu} />;
   } else if (view === 'arena') {
     body = <Arena key={`${prefs.modeId}-${prefs.heroId}-${round}`} modeId={prefs.modeId} heroId={prefs.heroId} options={options} debug={debug} onExit={toMenu} onAgain={again} onResult={onResult} />;
   } else if (view === 'modes') {

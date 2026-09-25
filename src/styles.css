@@ -511,3 +511,29 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 .btn-big:disabled { opacity: 0.7; }
 .fb-short { display: none; }
 @media (max-width: 760px) { .fb-long { display: none; } .fb-short { display: inline; } .friend-btn { font-size: 16px; } }
+
+/* ---- комнаты по сети ---- */
+.friend-create { gap: 8px; }
+.friend-modes { display: flex; gap: 8px; }
+.friend-mode { width: 118px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; }
+.friend-mode .mode-pick-name { font-size: 14px; text-align: center; line-height: 1.1; }
+.friend-mode-icon { font-size: 30px; }
+.friend-mode:disabled { opacity: 0.6; }
+.friend-hint { font-size: 12px; color: #e8cfc6; }
+.lobby { flex: 1; min-height: 0; display: flex; gap: 12px; align-items: stretch; justify-content: center; margin-top: 8px; }
+.lobby-code-box { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px 20px; min-width: 200px; }
+.lobby-players { flex: 1; max-width: 520px; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; overflow-y: auto; }
+.lobby-teams { display: flex; gap: 10px; }
+.lobby-team { flex: 1; display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.lobby-team-title { font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; text-align: center; text-shadow: 0 2px 0 #1a0306; }
+.team-blue .lobby-team-title { color: #7cc4ff; }
+.team-red .lobby-team-title { color: #ff8a80; }
+.lobby-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.lobby-slot { display: flex; flex-direction: column; padding: 6px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.3); border: 2px solid #1a0306; min-height: 44px; justify-content: center; }
+.lobby-slot.me { outline: 2px solid var(--gold); }
+.lobby-slot.empty { opacity: 0.6; border-style: dashed; }
+.lobby-name { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lobby-hero { font-size: 12px; color: #e8cfc6; }
+.lobby-actions { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.lobby-start { font-size: 26px; padding: 8px 40px; }
+.net-toast { position: absolute; top: 88px; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 8px; background: rgba(26, 3, 6, 0.85); border: 2px solid #1a0306; font-size: 14px; font-weight: 600; pointer-events: none; z-index: 5; white-space: nowrap; }

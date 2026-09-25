@@ -7,9 +7,9 @@ import { encodeCmd } from './protocol.js';
 //
 // Бой считает сервер. Устройство считает свою копию матча только ради картинки
 // (анимации ударов, снаряды, эффекты, звуки) и подстраивает её под снимки:
-//   • ХП, смерти, возрождения, статусы, захват, счёт — из снимка как есть;
+//   • ХП, смерти, возрождения, статусы, захват, счёт, предметы на карте — из снимка как есть;
 //   • урон на устройстве — только вспышка, цифры урона приходят с сервера;
-//   • соперник рисуется с задержкой INTERP между двумя снимками (интерполяция) —
+//   • остальные (игроки, боты, прохожие) рисуются с задержкой INTERP между двумя снимками (интерполяция) —
 //     плавно, даже если снимки приходят неровно;
 //   • свой боец двигается сразу по джойстику (предсказание), а расхождение
 //     с сервером плавно убирается (сверка по номеру команды).
@@ -39,10 +39,12 @@ export function createNetSync({ match, player, net }) {
     return 0;
   };
   world.heal = () => {};
+  // предметы подбирает сервер: здесь только показываем, какие лежат (pk в снимке)
+  world.pickups.update = () => {};
   for (const f of fighters) f.netClient = true;
 
   const remotes = new Map();
-  for (const f of fighters) if (f !== player) remotes.set(f, createRemoteController());
+  for (const f of fighters) if (f !== player && f.kit) remotes.set(f, createRemoteController());
 
   const buffer = [];           // снимки для интерполяции: { tm, f }
   let offset = null;           // время сервера − время устройства, с
@@ -54,11 +56,11 @@ export function createNetSync({ match, player, net }) {
 
   const applyState = (f, s) => {
     f.hp = s.hp;
-    f.kills = s.k;
+    if (f.kit) f.kills = s.k ?? 0;
     f.effects = {};
-    for (const k in s.e) f.effects[k] = { ...s.e[k] };
+    for (const k in s.e ?? {}) f.effects[k] = { ...s.e[k] };
     f.grabbedBy = s.g >= 0 ? fighters[s.g] : null;
-    if (f.grabbedBy) f.lift = s.l;
+    if (f.grabbedBy) f.lift = s.l ?? 0;
 
     if (s.al && !f.alive) {
       f.respawn();
@@ -76,7 +78,7 @@ export function createNetSync({ match, player, net }) {
     if (!f.alive) f.respawnIn = s.rs < 0 ? Infinity : s.rs;
 
     const ctl = remotes.get(f);
-    if (ctl) ctl.move = { moveX: s.m[0], moveZ: s.m[1], aimDir: vecOf(s.ad) };
+    if (ctl && s.m) ctl.move = { moveX: s.m[0], moveZ: s.m[1], aimDir: vecOf(s.ad) };
   };
 
   // свой боец: сравнить позицию сервера с тем, что мы предсказали для той же команды
@@ -106,12 +108,17 @@ export function createNetSync({ match, player, net }) {
     while (buffer.length > 2 && buffer[1].tm < m.tm - 1) buffer.shift();
 
     m.f.forEach((s, i) => applyState(fighters[i], s));
-    match.state.kills = { blue: m.sc[0], red: m.sc[1] };
+    if (m.sc) match.state.kills = { ...m.sc };
+    if (m.pk) world.pickups.spots.forEach((sp, i) => { sp.active = m.pk[i] === '1'; });
 
     for (const e of m.ev) {
       const f = fighters[e[1]];
       if (!f) continue;
-      if (e[0] === 'd') { f.flash = 1; match.events.push({ type: 'damage', target: f, amount: e[2], kind: e[3] }); }
+      if (e[0] === 'd') {
+        f.flash = 1;
+        if (f.walk) f.scaredT = 2.2;    // прохожий — вздрагивает и убегает (как на сервере)
+        match.events.push({ type: 'damage', target: f, amount: e[2], kind: e[3] });
+      }
       else if (e[0] === 'h') match.events.push({ type: 'heal', target: f, amount: e[2] });
       else if (e[0] === 'say') match.events.push({ type: 'say', f, text: e[2] });
       else if (e[0] === 'a' && f !== player) remotes.get(f).queue.push({ attack: vecOf(e[2]) });
@@ -121,7 +128,15 @@ export function createNetSync({ match, player, net }) {
     if (me >= 0) reconcile(m.f[me], m.ack);
   };
 
-  const onEnd = (m) => match.finish({ winners: m.winners, reason: m.reason });
+  // итог решает сервер: победители и места героев (по порядку мест)
+  const onEnd = (m) => {
+    const heroes = fighters.filter((f) => f.kit);
+    match.finish({
+      winners: m.winners,
+      reason: m.reason,
+      places: (m.res ?? []).map((r, i) => ({ f: heroes[i], place: r.place })).filter((p) => p.f),
+    });
+  };
 
   const offs = [net.on('s', onSnap), net.on('end', onEnd)];
 

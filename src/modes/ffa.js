@@ -1,7 +1,6 @@
 import { currentMap } from '../game/arena.js';
-import { heroById } from '../heroes/index.js';
 import { addWalkers } from '../game/walkers.js';
-import { randomHeroId, botNames } from './common.js';
+import { rosterOf, sideFor } from './common.js';
 
 // ============================================================
 // КАЖДЫЙ САМ ЗА СЕБЯ. Четыре бойца, до последнего выжившего — без возрождения.
@@ -22,17 +21,16 @@ export default {
   map: 'park',
   showPlace: true,          // в итоге показывать место, а не «Поражение»
 
-  setup(match, { heroId, playerName, botNames: preferred }) {
+  slots: 4,
+  teamOf: (i) => TEAMS[i],
+
+  setup(match, opts) {
     const map = currentMap();
-    const names = botNames(3, preferred);
-    const spawns = map.spawns;
-    match.addHero(heroId, {
-      name: playerName ?? heroById(heroId).name, team: TEAMS[0], control: 'local', side: 'self',
-      spawn: spawns[0], respawns: false,
-    });
-    for (let i = 1; i < 4; i++) {
-      match.addHero(randomHeroId(), { name: names[i - 1], team: TEAMS[i], control: 'bot', side: 'enemy', spawn: spawns[i], respawns: false });
-    }
+    const { roster, you } = rosterOf(opts, 4);
+    roster.forEach((r, i) => match.addHero(r.heroId, {
+      name: r.name, team: TEAMS[i], control: r.control, side: sideFor(i, you, (j) => TEAMS[j]),
+      spawn: map.spawns[i], respawns: false,
+    }));
     // аптечки на дорожке север–юг, сигареты — на дорожке запад–восток
     match.addPickup('medkit', 0, 8.5, 18);
     match.addPickup('medkit', 0, -8.5, 18);
@@ -51,15 +49,17 @@ export default {
     const alive = heroes.filter((f) => f.alive);
     victim.place = alive.length + 1;
 
+    // me — игрок этого устройства; на сервере его нет — там бой идёт до последнего выжившего
     const me = heroes.find((f) => f.control === 'local');
     // последний выживший — победа; выбыл ты — итог сразу (место уже известно)
-    if (alive.length <= 1 || victim === me) {
+    if (alive.length <= 1 || (me && victim === me)) {
       if (alive.length === 1) alive[0].place = 1;
       const winner = alive.length === 1 ? alive[0] : null;
       match.finish({
         winners: winner ? [winner.team] : [],
         places: heroes.filter((f) => f.place).map((f) => ({ f, place: f.place })),
-        reason: winner === me ? `Убийств: ${me.kills}` : `Место ${me.place ?? '—'} · убийств: ${me.kills}`,
+        reason: !me ? (winner ? `Победитель: ${winner.name}` : '')
+          : winner === me ? `Убийств: ${me.kills}` : `Место ${me.place ?? '—'} · убийств: ${me.kills}`,
       });
     }
   },

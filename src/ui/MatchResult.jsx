@@ -3,7 +3,7 @@ import DuckIcon from './DuckIcon.jsx';
 
 // Итог матча: «Победа» / «Поражение» (или место), счёт, утки, кнопки «Ещё раз» и «В меню».
 // reward: { delta, after, rank, rankUp, rankDown } — от рейтинга (в тренировке нет)
-export default function MatchResult({ result, reward, waiting, onAgain, onExit }) {
+export default function MatchResult({ result, reward, againLabel = 'Ещё раз', onAgain, onExit }) {
   const title = result.win ? 'Победа' : result.showPlace && result.place ? `${result.place} место` : 'Поражение';
   return (
     <div className={`result ${result.win ? 'win' : 'lose'}`}>
@@ -21,7 +21,7 @@ export default function MatchResult({ result, reward, waiting, onAgain, onExit }
           </div>
         )}
         <div className="result-buttons">
-          <button className="btn-big btn-gold" onClick={onAgain} disabled={waiting}>{waiting ? 'Ждём соперника…' : 'Ещё раз'}</button>
+          <button className="btn-big btn-gold" onClick={onAgain}>{againLabel}</button>
           <button className="btn-big" onClick={onExit}>В меню</button>
         </div>
       </div>

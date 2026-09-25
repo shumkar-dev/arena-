@@ -1,8 +1,7 @@
 import { ARENA } from '../game/arena.js';
 import { createFighter } from '../game/fighter.js';
 import { createBottle } from '../characters/bottle.js';
-import { heroById } from '../heroes/index.js';
-import { randomHeroId, botNames } from './common.js';
+import { rosterOf, sideFor } from './common.js';
 
 // ============================================================
 // 2 НА 2 — «СУЛТАН ЧАЙ». Ты и бот-союзник против двух ботов.
@@ -20,6 +19,13 @@ const TEAMS = ['blue', 'red'];
 // сигареты: по бокам от центра и у каждой базы, симметрично
 const CIGS = [[-6.5, 0], [6.5, 0], [-8.5, 8.5], [8.5, -8.5]];
 
+// бутылка разбилась: брызги чая и звон стекла
+function deathFx(match, victim) {
+  if (!victim.isObjective) return;
+  match.world.fx.explosion(victim.pos.x, victim.pos.z, 1.8, 0xc07a2a);
+  match.world.sfx('glass');
+}
+
 export default {
   id: 'teams',
   order: 2,
@@ -29,18 +35,24 @@ export default {
   icon: '🍾',
   map: 'road',
 
-  setup(match, { heroId, playerName, botNames: preferred }) {
-    const names = botNames(3, preferred);
-    const south = (x) => ({ x, z: ARENA.halfL - 4, facing: Math.PI });
-    const north = (x) => ({ x, z: -ARENA.halfL + 4, facing: 0 });
+  slots: 4,
+  teamOf: (i) => (i < 2 ? 'blue' : 'red'),
 
-    match.addHero(heroId, { name: playerName ?? heroById(heroId).name, team: 'blue', control: 'local', side: 'self', spawn: south(-2.5) });
-    const ally = match.addHero(randomHeroId(), { name: names[0], team: 'blue', control: 'bot', side: 'ally', spawn: south(2.5) });
-    ally.botRole = 'defend';   // союзник сторожит, ты нападаешь (или наоборот — как пойдёт)
-    const e1 = match.addHero(randomHeroId(), { name: names[1], team: 'red', control: 'bot', side: 'enemy', spawn: north(-2.5) });
-    const e2 = match.addHero(randomHeroId(), { name: names[2], team: 'red', control: 'bot', side: 'enemy', spawn: north(2.5) });
-    e1.botRole = 'attack';
-    e2.botRole = 'defend';
+  // места 0–1 — синие на юге, 2–3 — красные на севере; у ботов в каждой команде
+  // один нападает, второй сторожит бутылки
+  setup(match, opts) {
+    const { roster, you } = rosterOf(opts, 4);
+    const teamOf = (i) => (i < 2 ? 'blue' : 'red');
+    const spawns = [
+      { x: -2.5, z: ARENA.halfL - 4, facing: Math.PI }, { x: 2.5, z: ARENA.halfL - 4, facing: Math.PI },
+      { x: -2.5, z: -ARENA.halfL + 4, facing: 0 }, { x: 2.5, z: -ARENA.halfL + 4, facing: 0 },
+    ];
+    const ROLES = ['attack', 'defend', 'attack', 'defend'];
+    roster.forEach((r, i) => {
+      const f = match.addHero(r.heroId, { name: r.name, team: teamOf(i), control: r.control, side: sideFor(i, you, teamOf), spawn: spawns[i] });
+      f.botRole = ROLES[i];
+    });
+    const myTeam = you == null ? null : teamOf(you);
 
     for (const team of TEAMS) {
       const z = team === 'blue' ? BOTTLE_Z : -BOTTLE_Z;
@@ -48,7 +60,7 @@ export default {
         const b = createFighter({
           name: 'Султан чай', team, model: createBottle(team), maxHp: BOTTLE_HP,
           spawn: { x, z, facing: team === 'blue' ? Math.PI : 0 }, radius: 0.85, headY: 3.9,
-          side: team === 'blue' ? 'ally' : 'enemy', respawns: false,
+          side: myTeam == null ? 'enemy' : team === myTeam ? 'ally' : 'enemy', respawns: false,
         });
         b.isObjective = true;
         match.addObject(b);
@@ -57,12 +69,8 @@ export default {
     for (const [x, z] of CIGS) match.addPickup('cig', x, z, 15);
   },
 
-  onDeath(match, victim) {
-    if (!victim.isObjective) return;
-    // бутылка разбилась: брызги чая и звон стекла
-    match.world.fx.explosion(victim.pos.x, victim.pos.z, 1.8, 0xc07a2a);
-    match.world.sfx('glass');
-  },
+  onDeath: deathFx,
+  deathFx,          // только картинка и звук — в сетевой игре устройство вызывает это само
 
   update(match) {
     const left = (team) => match.fighters.filter((f) => f.isObjective && f.team === team && f.alive).length;

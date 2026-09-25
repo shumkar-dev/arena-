@@ -7,7 +7,9 @@ import { mat, box } from '../heroes/blocks.js';
 // team — чья бутылка (цвет крышки и ободка).
 // ============================================================
 
+// на сервере (Node) холста нет — этикетка не нужна, бутылка там не рисуется
 function labelTexture() {
+  if (typeof document === 'undefined') return null;
   const c = document.createElement('canvas');
   c.width = 256; c.height = 128;
   const g = c.getContext('2d');
