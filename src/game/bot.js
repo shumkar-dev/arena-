@@ -29,15 +29,28 @@ export const randomBotName = (taken = []) => {
   return free[Math.floor(Math.random() * free.length)] ?? 'Бот';
 };
 
-const THINK = 0.15;          // как часто бот принимает решения об атаке и ульте, с
-const AIM_ERROR = 0.06;      // разброс прицела, рад
-const DODGE_CHANCE = 0.8;    // от скольких снарядов пытается увернуться
+// Мастерство бота. По умолчанию — сильный бот; в рейтинговых матчах мастерство
+// зависит от звания игрока (src/rating/ranks.js → botSkill).
+export const DEFAULT_SKILL = {
+  think: 0.15,     // как часто бот принимает решения об атаке и ульте (реакция), с
+  aimError: 0.06,  // разброс прицела, рад
+  dodge: 0.8,      // от какой доли снарядов пытается увернуться
+  lead: 1,         // насколько учитывает движение цели (0 — стреляет туда, где цель сейчас)
+  hide: true,      // прячется ли за укрытие, когда ранен
+  ultDelay: 0.3,   // сколько «думает», прежде чем бросить готовую ульту, с
+};
 
 const norm = (x, z) => { const l = Math.hypot(x, z) || 1; return { x: x / l, z: z / l }; };
 const dist = (a, b) => Math.hypot(b.x - a.x, b.z - a.z);
 
-export function createBot(me) {
+// opts: { role, skill }
+//   role — 'attack' (идёт бить чужие бутылки) или 'defend' (сторожит свои); без бутылок не важна
+//   skill — мастерство (см. DEFAULT_SKILL), можно передать только часть полей
+export function createBot(me, opts = {}) {
   const prof = me.hero.bot;
+  const role = opts.role ?? me.botRole ?? 'attack';
+  const sk = { ...DEFAULT_SKILL, ...opts.skill };
+  const THINK = sk.think;
   const s = {
     think: Math.random() * THINK,
     strafe: Math.random() < 0.5 ? 1 : -1,
@@ -54,11 +67,51 @@ export function createBot(me) {
   // счётчики для автотестов и отладки (?debug → window.__game.fighters[i].botStats)
   const stats = me.botStats = { ults: 0, attacks: 0, specials: 0, dodges: 0, hides: 0 };
 
-  const pickTarget = (world) => {
+  // ближайший из списка; того, кого не видно, считаем чуть дальше
+  const nearestOf = (list) => {
     let best = null, bestD = Infinity;
-    for (const e of enemiesOf(me, world)) {
+    for (const e of list) {
       const d = dist(me.pos, e.pos) - (lineClear(me.pos.x, me.pos.z, e.pos.x, e.pos.z) ? 0 : 3);
       if (d < bestD) { best = e; bestD = d; }
+    }
+    return best;
+  };
+
+  // Кого бить. В режимах с бутылками — по роли: защитник сторожит свои,
+  // нападающий идёт к чужим, но отвечает тем, кто подошёл вплотную.
+  // null — врага рядом нет, защитник стоит на посту.
+  const pickTarget = (world) => {
+    const foes = enemiesOf(me, world);
+    const heroes = foes.filter((e) => e.kit);
+    const objs = foes.filter((e) => e.isObjective);
+    const mine = world.fighters.filter((f) => f.isObjective && f.alive && f.team === me.team);
+    if (!objs.length && !mine.length) return nearestOf(heroes);
+
+    const threat = nearestOf(heroes.filter((h) => mine.some((o) => dist(h.pos, o.pos) < 7)));
+    const close = nearestOf(heroes.filter((h) => dist(me.pos, h.pos) < (role === 'defend' ? 8 : 5)));
+    if (role === 'defend') return threat ?? close;
+    return close ?? (threat && dist(me.pos, threat.pos) < 9 ? threat : null) ?? nearestOf(objs) ?? nearestOf(heroes);
+  };
+
+  // пост защитника: перед своими бутылками, ближе к центру
+  const guardPoint = (world) => {
+    const mine = world.fighters.filter((f) => f.isObjective && f.alive && f.team === me.team);
+    if (!mine.length) return null;
+    const cx = mine.reduce((a, o) => a + o.pos.x, 0) / mine.length;
+    const cz = mine.reduce((a, o) => a + o.pos.z, 0) / mine.length;
+    return { x: cx * 0.6, z: cz - Math.sign(cz) * 3.5 };
+  };
+
+  // стоит ли сходить за предметом: сигарета рядом, аптечка — когда ранен
+  const wantPickup = (world, enemy) => {
+    const foeNear = enemy && enemy.kit && dist(me.pos, enemy.pos) < 4.5;
+    if (foeNear) return null;
+    let best = null, bestD = Infinity;
+    for (const sp of world.pickups?.spots ?? []) {
+      if (!sp.active) continue;
+      const d = dist(me.pos, sp);
+      const want = sp.kind === 'cig' ? d < 7 && !me.hasEffect('cig') : sp.kind === 'medkit' && me.hp < me.maxHp * 0.6 && d < 11;
+      if (want && d < bestD) { best = sp; bestD = d; }
     }
     return best;
   };
@@ -69,7 +122,7 @@ export function createBot(me) {
     // снаряды, летящие в нас
     for (const p of world.projectiles.list) {
       if (p.owner.team === me.team) continue;
-      if (!s.seen.has(p)) s.seen.set(p, Math.random() < DODGE_CHANCE);
+      if (!s.seen.has(p)) s.seen.set(p, Math.random() < sk.dodge);
       if (!s.seen.get(p)) continue;
       const sp = Math.hypot(p.vx, p.vz) || 1;
       const ux = p.vx / sp, uz = p.vz / sp;
@@ -91,7 +144,7 @@ export function createBot(me) {
       }
     }
     for (const e of enemiesOf(me, world)) {
-      const area = e.kit.activeArea?.();
+      const area = e.kit?.activeArea?.();   // у бутылок и прохожих приёмов нет
       if (!area || area.type !== 'cone') continue;
       const dx = me.pos.x - e.pos.x, dz = me.pos.z - e.pos.z;
       const dd = Math.hypot(dx, dz);
@@ -173,8 +226,12 @@ export function createBot(me) {
 
       const enemy = pickTarget(world);
       if (!enemy) {
-        const home = norm(-me.pos.x, -me.pos.z);
-        if (Math.hypot(me.pos.x, me.pos.z) > 2) { const d = steer(home); cmd.moveX = d.x; cmd.moveZ = d.z; }
+        // никого рядом: за предметом, на пост у своих бутылок или к центру
+        const item = wantPickup(world, null);
+        const post = item ?? guardPoint(world) ?? { x: 0, z: 0 };
+        if (dist(me.pos, post) > 1.2) { const d = steer(norm(post.x - me.pos.x, post.z - me.pos.z)); cmd.moveX = d.x; cmd.moveZ = d.z; }
+        const away = dodge(world);
+        if (away) { const d = steer(away); cmd.moveX = d.x; cmd.moveZ = d.z; }
         return cmd;
       }
 
@@ -188,8 +245,10 @@ export function createBot(me) {
       // ---- куда идти ----
       let move = null;
 
+      const item = wantPickup(world, enemy);
+
       // ранен и под огнём — за укрытие (кроме ближников вплотную: им лучше добивать)
-      if (s.hideT <= 0 && s.hurtT < 0.3 && me.hp < me.maxHp * 0.45 && !(prof.melee && d < prof.range + 0.5) && !hud.ultActive) {
+      if (sk.hide && s.hideT <= 0 && s.hurtT < 0.3 && me.hp < me.maxHp * 0.45 && !enemy.isStatic && !(prof.melee && d < prof.range + 0.5) && !hud.ultActive) {
         s.hideSpot = findCover(enemy);
         if (s.hideSpot) { s.hideT = 1.4; stats.hides += 1; }
       }
@@ -197,6 +256,9 @@ export function createBot(me) {
         s.hideT -= dt;
         if (s.hideSpot && dist(me.pos, s.hideSpot) > 0.4) move = norm(s.hideSpot.x - me.pos.x, s.hideSpot.z - me.pos.z);
         else move = { x: 0, z: 0 };
+      } else if (item && !hud.ultActive) {
+        // за сигаретой или аптечкой
+        move = norm(item.x - me.pos.x, item.z - me.pos.z);
       } else if (hud.ultCd <= 0 && !hud.ultActive && d > prof.ult.range && d < prof.ult.range + 6) {
         // ульта готова, но не достаёт — подойти на её дистанцию (зигзагом)
         const zig = Math.sin(world.time * 5 + me.id) * 0.6;
@@ -244,8 +306,8 @@ export function createBot(me) {
       const ultReady = hud.ultCd <= 0 && !hud.ultActive;
       const ultOk = ultReady && d <= prof.ult.range && (sight || prof.ult.lead);
       s.ultWish = ultOk ? s.ultWish + THINK : 0;
-      if (ultOk && s.ultWish >= 0.3) {
-        const t = typeof prof.ult.lead === 'function' ? prof.ult.lead(d) : 0;
+      if (ultOk && s.ultWish >= sk.ultDelay) {
+        const t = typeof prof.ult.lead === 'function' ? prof.ult.lead(d) * sk.lead : 0;
         cmd.ult = leadPoint(enemy, t);
         s.ultWish = 0;
         stats.ults += 1;
@@ -254,10 +316,10 @@ export function createBot(me) {
 
       // атака: только если достанет и путь чист — промах сбивает серию
       if (!hud.attackLocked && d <= prof.range) {
-        const t = prof.projectileSpeed ? d / prof.projectileSpeed : 0;
+        const t = prof.projectileSpeed ? (d / prof.projectileSpeed) * sk.lead : 0;
         const p = leadPoint(enemy, t);
         if (prof.melee || lineClear(me.pos.x, me.pos.z, p.x, p.z)) {
-          const a = Math.atan2(p.x - me.pos.x, p.z - me.pos.z) + (Math.random() * 2 - 1) * AIM_ERROR;
+          const a = Math.atan2(p.x - me.pos.x, p.z - me.pos.z) + (Math.random() * 2 - 1) * sk.aimError;
           cmd.attack = { x: Math.sin(a), z: Math.cos(a) };
           stats.attacks += 1;
           if (hud.combo >= 2) stats.specials += 1;
