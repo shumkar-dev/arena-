@@ -9,6 +9,7 @@ import Settings from './ui/menu/Settings.jsx';
 import Rating from './ui/menu/Rating.jsx';
 import { loadPrefs, savePrefs } from './ui/prefs.js';
 import { sound } from './game/sound.js';
+import { music } from './game/music.js';
 import { rankOf, rewardFor, isRanked, botSkill } from './rating/ranks.js';
 import { playerDucks, pickBotNames, applyMatch, syncPlayer } from './rating/store.js';
 import DuckIcon from './ui/DuckIcon.jsx';
@@ -88,7 +89,14 @@ export default function App() {
   }, [net]);
 
   const update = useCallback((patch) => setPrefs((p) => ({ ...p, ...patch })), []);
-  useEffect(() => { savePrefs(prefs); sound.setVolume(prefs.volume); }, [prefs]);
+  useEffect(() => {
+    savePrefs(prefs);
+    sound.setVolume(prefs.volume);
+    sound.setBusVolume('voice', prefs.voiceVolume);
+    sound.setBusVolume('music', prefs.musicVolume);
+  }, [prefs]);
+  // музыка: в бою — боевая, в меню — своя (переход плавный, см. music.js)
+  useEffect(() => { music.play(view.startsWith('arena') ? 'battle' : 'menu'); }, [view]);
 
 
   const playerName = prefs.playerName.trim() || 'Игрок';

@@ -1,5 +1,5 @@
 // Простой офлайн-кэш: страница — сначала сеть, ассеты со слепком в имени — сначала кэш.
-const CACHE = 'arena-v2';
+const CACHE = 'arena-v3';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
@@ -24,7 +24,8 @@ self.addEventListener('fetch', (e) => {
   }
   e.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+      // 206 (кусок музыки) кэш не принимает — кладём только полные ответы
+      if (res.status === 200) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
       return res;
     }))
   );

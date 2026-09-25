@@ -5,6 +5,10 @@
 // реверберация (свёртка со сгенерированным хвостом) + перегруз для взрывов.
 // Браузер разрешает звук только после касания, поэтому контекст создаётся
 // в unlock() по первому нажатию. Выключенный звук запоминается на устройстве.
+//
+// Три канала с отдельной громкостью (настройки): звуки (эти, процедурные),
+// голоса (voice.js — реплики героев) и музыка (music.js). Кнопка звука
+// выключает всё сразу.
 // ============================================================
 
 const STORE_KEY = 'arena.muted';
@@ -16,7 +20,11 @@ let reverb = null;     // вход реверберации
 let noiseBuf = null;
 let drive = null;      // кривая мягкого перегруза
 let muted = false;
-let volume = 0.8;       // 0..1, из настроек
+let volume = 0.8;       // 0..1, громкость звуков — из настроек
+let mainOut = null;     // общий выход всех каналов: 0 — звук выключен
+const buses = {};       // voice, music — входы каналов голосов и музыки
+const busVolume = { voice: 0.9, music: 0.5 };
+const unlockers = [];   // кому сообщить, что звук разрешён (музыке)
 try { muted = localStorage.getItem(STORE_KEY) === '1'; } catch { /* приватный режим — звук включён */ }
 
 const lastPlayed = new Map();   // имя → время, чтобы одинаковые звуки не сливались в кашу
@@ -29,15 +37,24 @@ function ensure() {
   ctx = new AC();
 
   // общий выход: компрессор держит громкие взрывы поверх ударов
+  mainOut = ctx.createGain();
+  mainOut.gain.value = muted ? 0 : 1;
+  mainOut.connect(ctx.destination);
+  for (const name of ['voice', 'music']) {
+    buses[name] = ctx.createGain();
+    buses[name].gain.value = busVolume[name];
+    buses[name].connect(mainOut);
+  }
+
   const out = ctx.createGain();
-  out.gain.value = muted ? 0 : MASTER * volume;
+  out.gain.value = MASTER * volume;
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -16;
   comp.knee.value = 12;
   comp.ratio.value = 5;
   comp.attack.value = 0.003;
   comp.release.value = 0.2;
-  out.connect(comp).connect(ctx.destination);
+  out.connect(comp).connect(mainOut);
   master = ctx.createGain();
   master.connect(out);
   master.out = out;
@@ -357,7 +374,19 @@ export const sound = {
   // вызвать по первому касанию — браузер разрешит звук
   unlock() {
     if (!ensure()) return;
-    if (ctx.state === 'suspended') ctx.resume();
+    const done = () => { for (const fn of unlockers) fn(); };
+    if (ctx.state === 'suspended') ctx.resume().then(done, () => {});
+    else done();
+  },
+  /** Сообщить, когда браузер разрешит звук (после касания). */
+  onUnlock(fn) { unlockers.push(fn); },
+  /** Контекст Web Audio, если звук уже разрешён, иначе null. */
+  context() { return ctx && ctx.state === 'running' ? ctx : null; },
+  /** Вход канала голосов или музыки. */
+  bus(name) { return buses[name] ?? null; },
+  setBusVolume(name, v) {
+    busVolume[name] = Math.max(0, Math.min(1, v));
+    buses[name]?.gain.setTargetAtTime(busVolume[name], ctx.currentTime, 0.05);
   },
   play(name, opts) {
     if (muted || !ctx || ctx.state !== 'running' || !SOUNDS[name]) return;
@@ -372,11 +401,12 @@ export const sound = {
     muted = v;
     try { localStorage.setItem(STORE_KEY, v ? '1' : '0'); } catch { /* не сохранилось — не страшно */ }
     if (v) sound.stopAll();
-    if (master) master.out.gain.setTargetAtTime(v ? 0 : MASTER * volume, ctx.currentTime, 0.02);
+    if (mainOut) mainOut.gain.setTargetAtTime(v ? 0 : 1, ctx.currentTime, 0.02);
+    for (const fn of unlockers) fn();
   },
   get volume() { return volume; },
   setVolume(v) {
     volume = Math.max(0, Math.min(1, v));
-    if (master && !muted) master.out.gain.setTargetAtTime(MASTER * volume, ctx.currentTime, 0.02);
+    if (master) master.out.gain.setTargetAtTime(MASTER * volume, ctx.currentTime, 0.02);
   },
 };
