@@ -2,25 +2,42 @@ import * as THREE from 'three';
 import { buildArena, resolveCollisions, ARENA } from './arena.js';
 import { createDummy } from '../characters/dummy.js';
 import { createFighter } from './fighter.js';
-import { heroById } from './heroes.js';
+import { HEROES, heroById } from '../heroes/index.js';
 import { createOverlay } from './overlay.js';
 import { createProjectiles, nearestEnemy } from './combat.js';
 import { createEffects } from './effects.js';
 import { createAim } from './aim.js';
+import { createBot, randomBotName } from './bot.js';
 import { sound } from './sound.js';
 
 // ============================================================
 // ИГРОВОЙ ЦИКЛ — вне React, чтобы не пересоздавать сцену на каждый рендер.
-// React-интерфейс пишет в input и читает состояние через onHud.
+// Каждый боец (игрок или бот) управляется одинаково: раз в кадр получает команду
+// { moveX, moveZ, aimDir, attack, ult }. Игроку её собирает input с кнопок,
+// боту — его мозг (bot.js). React-интерфейс пишет в input и читает onHud.
+//
+// options: { heroId, botHeroId, dummy, autoplay, fast }
+//   dummy    — вместо бота манекен (тренировка, автотесты)
+//   autoplay — игроком тоже управляет бот (автотесты, прогон баланса)
+//   fast     — шагов симуляции на кадр (ускоренная прокрутка для автотестов)
 // ============================================================
 
-const PLAYER_SPAWN = { x: 0, z: ARENA.halfL - 3, facing: Math.PI };   // смотрит на север (−Z)
+const PLAYER_SPAWN = { x: 0, z: ARENA.halfL - 3, facing: Math.PI };   // юг, смотрит на север (−Z)
+const BOT_SPAWN = { x: 0, z: -ARENA.halfL + 3, facing: 0 };           // север, смотрит на юг
 const DUMMY_SPAWN = { x: -2.2, z: 7.5, facing: 0 };
 
 const CAM_OFFSET = new THREE.Vector3(0, 14.5, 9.5);
 
-export function createGame(mount, input, onHud, heroId) {
-  const hero = heroById(heroId);
+// Оттяжка кнопки: (dx, dy) — вектор −1..1 в экранных осях, экранный низ = +Z.
+// Меньше порога — считаем коротким касанием (автоприцел).
+const AIM_DEAD = 0.25;
+const dragDir = (dx, dy) => {
+  const m = Math.hypot(dx, dy);
+  return m < AIM_DEAD ? null : { x: dx / m, z: dy / m };
+};
+
+export function createGame(mount, input, onHud, options = {}) {
+  const hero = heroById(options.heroId);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x9fb4c8);
@@ -61,26 +78,21 @@ export function createGame(mount, input, onHud, heroId) {
 
   buildArena(scene);
 
-  // ---- бойцы ----
-  const player = createFighter({ name: hero.name, team: 'blue', model: hero.createModel(), maxHp: hero.stats.maxHp, spawn: PLAYER_SPAWN });
-  const kit = hero.createKit(player);
-  player.stride = 0;
-  player.moving = false;
-
-  const dummy = createFighter({ name: 'Манекен', team: 'red', model: createDummy(), maxHp: 4000, spawn: DUMMY_SPAWN, radius: 0.55, headY: 2.75 });
-  dummy.isStatic = true;
-
-  const fighters = [player, dummy];
-  for (const f of fighters) f.addTo(scene);
-
   const overlay = createOverlay(mount);
   const projectiles = createProjectiles(scene);
   const fx = createEffects(scene);
+  const aim = createAim(scene);
+
+  const fighters = [];
+  const score = { blue: 0, red: 0 };
+  let player = null;
 
   const world = {
     fighters,
     projectiles,
     fx,
+    time: 0,
+    dangers: [],            // точки, куда вот-вот прилетит удар: { x, z, r, t, team } — боты их обходят
     damage(target, amount, from, kind) {
       const dealt = target.takeDamage(amount, from);
       if (dealt > 0) overlay.spawnNumber(target, dealt, target === player ? 'taken' : kind);
@@ -91,27 +103,92 @@ export function createGame(mount, input, onHud, heroId) {
     sfx(name, opts) { sound.play(name, opts); },
   };
 
-  const aim = createAim(scene);
-
-  // Оттяжка кнопки: (dx, dy) — вектор −1..1 в экранных осях, экранный низ = +Z.
-  // Меньше порога — считаем коротким касанием (автоприцел).
-  const AIM_DEAD = 0.25;
-  const dragDir = (dx, dy) => {
-    const m = Math.hypot(dx, dy);
-    return m < AIM_DEAD ? null : { x: dx / m, z: dy / m };
+  // ---- бойцы ----
+  const spawnHero = (h, { name, team, spawn, brain }) => {
+    const f = createFighter({ name, team, model: h.createModel(), maxHp: h.stats.maxHp, spawn });
+    f.hero = h;
+    f.kit = h.createKit(f);
+    f.stride = 0;
+    f.moving = false;
+    f.vel = { x: 0, z: 0 };
+    f.addTo(scene);
+    fighters.push(f);
+    if (brain) f.brain = createBot(f);
+    return f;
   };
 
-  // точка ульты по оттяжке кнопки; короткое касание — в ближайшего врага, иначе перед собой
-  const ultPoint = (dx, dy) => {
+  player = spawnHero(hero, { name: hero.name, team: 'blue', spawn: PLAYER_SPAWN, brain: !!options.autoplay });
+
+  if (options.dummy) {
+    const dummy = createFighter({ name: 'Манекен', team: 'red', model: createDummy(), maxHp: 4000, spawn: DUMMY_SPAWN, radius: 0.55, headY: 2.75 });
+    dummy.isStatic = true;
+    dummy.addTo(scene);
+    fighters.push(dummy);
+  } else {
+    const botHero = options.botHeroId ? heroById(options.botHeroId) : HEROES[Math.floor(Math.random() * HEROES.length)];
+    spawnHero(botHero, { name: randomBotName(), team: 'red', spawn: BOT_SPAWN, brain: true });
+  }
+
+  // точка ульты по оттяжке кнопки игрока; короткое касание — в ближайшего врага, иначе перед собой
+  const ultPoint = (f, dx, dy) => {
+    const kit = f.kit;
     const mag = Math.hypot(dx, dy);
     if (mag < 0.2) {
-      const tgt = nearestEnemy(player, world, kit.ultAutoRange ?? kit.ultRange);
+      const tgt = nearestEnemy(f, world, kit.ultAutoRange ?? kit.ultRange ?? 8);
       if (tgt) return { x: tgt.pos.x, z: tgt.pos.z };
-      const r = kit.ultRange * 0.5;
-      return { x: player.pos.x + Math.sin(player.facing) * r, z: player.pos.z + Math.cos(player.facing) * r };
+      const r = (kit.ultRange ?? 4) * 0.5;
+      return { x: f.pos.x + Math.sin(f.facing) * r, z: f.pos.z + Math.cos(f.facing) * r };
     }
     const k = Math.min(1, mag) / mag;
-    return { x: player.pos.x + dx * k * kit.ultRange, z: player.pos.z + dy * k * kit.ultRange };
+    return { x: f.pos.x + dx * k * kit.ultRange, z: f.pos.z + dy * k * kit.ultRange };
+  };
+
+  // команда игрока из кнопок и джойстика
+  const playerCommand = () => {
+    const cmd = { moveX: input.moveX, moveZ: input.moveY, aimDir: null };
+    if (input.attackAim?.active) cmd.aimDir = dragDir(input.attackAim.dx, input.attackAim.dy);
+    if (input.attack) { input.attack = false; cmd.attack = null; }          // касание — автоприцел
+    if (input.attackFire) {                                                   // отпустили оттянутую кнопку
+      cmd.attack = dragDir(input.attackFire.dx, input.attackFire.dy);
+      input.attackFire = null;
+    }
+    if (input.ult) { input.ult = false; cmd.ult = player.kit.ultAim === 'drag' ? ultPoint(player, 0, 0) : null; }
+    if (input.ultFire) { cmd.ult = ultPoint(player, input.ultFire.dx, input.ultFire.dy); input.ultFire = null; }
+    return cmd;
+  };
+
+  // выполнить команду бойца: движение, взгляд, атака, ульта
+  const act = (f, cmd, dt) => {
+    const kit = f.kit;
+    if (cmd.attack !== undefined) kit.attack(cmd.attack);
+    if (cmd.ult !== undefined) kit.ult(cmd.ult, world);
+
+    let mx = cmd.moveX, mz = cmd.moveZ;
+    const len = Math.hypot(mx, mz);
+    if (len > 1) { mx /= len; mz /= len; }
+    const mag = Math.min(1, len);
+
+    f.moving = mag > 0.12 && f.canAct() && !kit.busy;
+    f.before = f.pos.clone();
+    // Пока прицел оттянут или идёт атака, боец смотрит в сторону прицела,
+    // даже если бежит в другую сторону (как в Brawl Stars). Иначе — по ходу движения.
+    const holdFacing = !!cmd.aimDir || kit.lockFacing != null;
+    if (f.moving) {
+      const speed = f.hero.stats.speed * kit.speedMul * f.moveMul();
+      f.pos.x += mx * speed * mag * dt;
+      f.pos.z += mz * speed * mag * dt;
+      if (!holdFacing) {
+        const d = Math.atan2(Math.sin(Math.atan2(mx, mz) - f.facing), Math.cos(Math.atan2(mx, mz) - f.facing));
+        f.facing += d * Math.min(1, dt * 14);
+      }
+    }
+    // прицел оттянут — смотрит туда (так же ведётся струя сметанамёта)
+    if (cmd.aimDir && f.canAct() && !kit.busy) f.facing = Math.atan2(cmd.aimDir.x, cmd.aimDir.z);
+
+    kit.update(dt, world);
+    // атака началась или идёт — держим угол, в который она направлена
+    if (kit.lockFacing != null) f.facing = kit.lockFacing;
+    if (kit.forcedMoving != null) f.moving = kit.forcedMoving;
   };
 
   // бойцы не проходят друг сквозь друга; неподвижных толкать нельзя
@@ -150,82 +227,54 @@ export function createGame(mount, input, onHud, heroId) {
   let raf = 0, hudAcc = 0, lastHud = '';
 
   const step = (dt, t) => {
-    // --- кнопки ---
-    if (input.attack) { input.attack = false; kit.attack(null); }       // касание — автоприцел
-    if (input.attackFire) {                                              // отпустили оттянутую кнопку
-      const { dx, dy } = input.attackFire;
-      input.attackFire = null;
-      kit.attack(dragDir(dx, dy));
-    }
-    if (input.ult) {
-      // тап по ульте (или K на клавиатуре); прицельной ульте — автоцель
-      input.ult = false;
-      kit.ult(kit.ultAim === 'drag' ? ultPoint(0, 0) : null, world);
-    }
-    if (input.ultFire) {
-      const { dx, dy } = input.ultFire;
-      input.ultFire = null;
-      kit.ult(ultPoint(dx, dy), world);
+    world.time += dt;
+    for (let i = world.dangers.length - 1; i >= 0; i--) {
+      world.dangers[i].t -= dt;
+      if (world.dangers[i].t <= 0) world.dangers.splice(i, 1);
     }
     if (input.selfHit) { input.selfHit = false; world.damage(player, 1000, null, 'taken'); }
 
-    // --- движение игрока ---
-    let mx = input.moveX, mz = input.moveY;
-    const len = Math.hypot(mx, mz);
-    if (len > 1) { mx /= len; mz /= len; }
-    const mag = Math.min(1, len);
-
-    player.moving = mag > 0.12 && player.canAct() && !kit.busy;
-    const before = player.pos.clone();
-    // Пока кнопка атаки оттянута или идёт атака, герой смотрит в сторону прицела,
-    // даже если бежит в другую сторону (как в Brawl Stars). Иначе — по ходу движения.
-    const aimingAttack = input.attackAim?.active && !!dragDir(input.attackAim.dx, input.attackAim.dy);
-    const holdFacing = aimingAttack || kit.lockFacing != null;
-    if (player.moving) {
-      const speed = hero.stats.speed * kit.speedMul * player.moveMul();
-      player.pos.x += mx * speed * mag * dt;
-      player.pos.z += mz * speed * mag * dt;
-      if (!holdFacing) {
-        // плавный поворот к направлению движения
-        const d = Math.atan2(Math.sin(Math.atan2(mx, mz) - player.facing), Math.cos(Math.atan2(mx, mz) - player.facing));
-        player.facing += d * Math.min(1, dt * 14);
-      }
+    // --- команды и действия всех бойцов ---
+    for (const f of fighters) {
+      if (!f.kit) continue;   // манекен
+      f.cmd = f.brain ? f.brain.think(dt, world) : playerCommand();
+      act(f, f.cmd, dt);
     }
 
-    // пока кнопка атаки оттянута, герой смотрит в сторону прицела (так же ведётся струя сметанамёта)
-    if (input.attackAim?.active && player.canAct() && !kit.busy) {
-      const d = dragDir(input.attackAim.dx, input.attackAim.dy);
-      if (d) player.facing = Math.atan2(d.x, d.z);
-    }
-
-    kit.update(dt, world);
-    // атака началась или идёт — держим угол, в который она направлена
-    if (kit.lockFacing != null) player.facing = kit.lockFacing;
-    if (kit.forcedMoving != null) player.moving = kit.forcedMoving;
-
-    // --- столкновения ---
+    // --- столкновения, скорость, шаг ---
     separate();
     for (const f of fighters) if (f.alive && !f.grabbedBy) resolveCollisions(f.pos, f.radius);
-    player.stride += before.distanceTo(player.pos) * hero.stride / (kit.speedMul > 1.3 ? 1.22 : 1);
+    for (const f of fighters) {
+      if (!f.kit) continue;
+      f.stride += f.before.distanceTo(f.pos) * f.hero.stride / (f.kit.speedMul > 1.3 ? 1.22 : 1);
+      // сглаженная скорость — боты по ней стреляют с упреждением
+      const k = Math.min(1, dt * 10);
+      f.vel.x += ((f.pos.x - f.before.x) / Math.max(dt, 1e-4) - f.vel.x) * k;
+      f.vel.z += ((f.pos.z - f.before.z) / Math.max(dt, 1e-4) - f.vel.z) * k;
+    }
 
     projectiles.update(dt, world);
     fx.update(dt);
 
-    // --- модели ---
-    player.model.animate({ t, stride: player.stride, moving: player.moving, ...kit.pose() });
-    dummy.model.animate({ t });
+    // --- модели, смерти и возрождения ---
     for (const f of fighters) {
+      if (f.kit) f.model.animate({ t, stride: f.stride, moving: f.moving, ...f.kit.pose() });
+      else f.model.animate({ t });
       f.updateView(dt);
-      // смерть (случается от урона в любой момент кадра) и возрождение — по смене состояния
-      if (f.alive !== (f.wasAlive ?? true)) sound.play(f.alive ? 'respawn' : 'death');
+      const was = f.wasAlive ?? true;
+      if (f.alive !== was) {
+        sound.play(f.alive ? 'respawn' : 'death');
+        // очко команде того, кто добил
+        if (!f.alive && f.lastHitBy && f.lastHitBy.team !== f.team) score[f.lastHitBy.team] += 1;
+      }
       f.wasAlive = f.alive;
     }
 
-    // --- прицел на земле ---
-    const aDir = input.attackAim?.active && player.alive ? dragDir(input.attackAim.dx, input.attackAim.dy) : null;
-    if (aDir) {
-      aim.showAttack(kit.attackShape(), player.pos, Math.atan2(aDir.x, aDir.z));
-    } else aim.hideAttack();
+    // --- прицел игрока на земле ---
+    const kit = player.kit;
+    const aDir = player.alive && !player.brain ? player.cmd?.aimDir : null;
+    if (aDir) aim.showAttack(kit.attackShape(), player.pos, Math.atan2(aDir.x, aDir.z));
+    else aim.hideAttack();
 
     // зона ульты, которая действует сейчас (струя Смитаны)
     const area = player.alive ? kit.activeArea?.() : null;
@@ -233,7 +282,7 @@ export function createGame(mount, input, onHud, heroId) {
     else aim.hideArea();
 
     if (kit.ultAim === 'drag' && input.ultAim?.active && player.alive) {
-      const p = ultPoint(input.ultAim.dx, input.ultAim.dy);
+      const p = ultPoint(player, input.ultAim.dx, input.ultAim.dy);
       aim.showUlt(kit.ultShape, player.pos, Math.atan2(p.x - player.pos.x, p.z - player.pos.z), p);
     } else aim.hideUlt();
 
@@ -245,6 +294,7 @@ export function createGame(mount, input, onHud, heroId) {
     if (hudAcc > 0.1) {
       hudAcc = 0;
       const k = kit.hud();
+      const rival = fighters.find((f) => f.team !== player.team);
       const hud = {
         ...k,
         ultCd: Math.ceil(k.ultCd * 10) / 10,
@@ -252,6 +302,7 @@ export function createGame(mount, input, onHud, heroId) {
         ultAim: kit.ultAim,
         dead: !player.alive,
         respawnIn: Math.ceil(player.respawnIn),
+        score: { me: score.blue, rival: score.red, rivalName: rival?.name ?? '', rivalHero: rival?.hero?.name ?? '' },
       };
       const key = JSON.stringify(hud);
       if (key !== lastHud) { lastHud = key; onHud?.(hud); }
@@ -261,7 +312,7 @@ export function createGame(mount, input, onHud, heroId) {
   const loop = () => {
     raf = requestAnimationFrame(loop);
     const dt = Math.min(clock.getDelta(), 0.05);
-    step(dt, clock.elapsedTime);
+    for (let i = 0; i < (options.fast ?? 1); i++) step(dt, clock.elapsedTime + i * dt);
     renderer.render(scene, camera);
   };
   loop();
@@ -269,6 +320,8 @@ export function createGame(mount, input, onHud, heroId) {
   return {
     fighters,
     hero,
+    score,
+    world,
     projectiles: projectiles.list,
     dispose() {
       cancelAnimationFrame(raf);

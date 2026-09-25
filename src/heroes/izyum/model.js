@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mat, box, part, resetRig, poseRun, overlayThrust } from './blocks.js';
+import { mat, box, part, resetRig, poseRun, overlayThrust } from '../blocks.js';
 
 // ============================================================
 // ЧЁРНЫЙ ИЗЮМ — игровая модель

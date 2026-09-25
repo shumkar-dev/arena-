@@ -164,8 +164,7 @@ export function createShabaKit(me) {
             world.sfx('punch');
             s.combo += 1;
           } else {
-            world.sfx('swing');
-            s.combo = 0;     // промах сбивает серию
+            world.sfx('swing');   // промах серию не сбрасывает — её сбрасывает только пауза
           }
         }
         if (s.actionT >= 1) s.action = null;

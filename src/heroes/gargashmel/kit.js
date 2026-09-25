@@ -1,4 +1,5 @@
-import { createChain, aimAttack, faceTowards, enemiesInCone, enemiesInRadius } from '../combat.js';
+import { createChain, aimAttack, faceTowards, enemiesInCone, enemiesInRadius } from '../../game/combat.js';
+import { createBee } from './model.js';
 
 // ============================================================
 // ПРИЁМЫ ГАРГАШМЕЛЯ
@@ -69,8 +70,9 @@ export function createGargashmelKit(me) {
       if (d > 0.5) faceTowards(me, x, z);
       const dur = T.beeBaseTime + Math.min(d, T.ultRange) / T.beeSpeed;
       s.bee = { x, z, t: dur };
-      world.fx.beeFlight(me.pos.x, me.pos.z, x, z, dur);
+      world.fx.flight(createBee(), me.pos.x, me.pos.z, x, z, dur);
       world.fx.marker(x, z, T.ultRadius, dur);
+      world.dangers?.push({ x, z, r: T.ultRadius, t: dur, team: me.team });   // боты увидят и уйдут
       world.sfx('beeFlight', { dur });
     },
 
@@ -108,7 +110,6 @@ export function createGargashmelKit(me) {
             me.addEffect('frenzy', T.frenzyTime);
             world.sfx('frenzy');
           } else if (hits.length) chain.hit();
-          else chain.miss();
         }
         if (s.whipT >= 1) s.whipT = -1;
       }
