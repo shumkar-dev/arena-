@@ -7,7 +7,7 @@ import * as THREE from 'three';
 // ============================================================
 
 const NUMBER_LIFE = 0.9;
-const STATUS_ICONS = { slow: '🐌', frenzy: '⚡' };
+const STATUS_ICONS = { slow: '🐌', frenzy: '⚡', cig: '🚬' };
 const v = new THREE.Vector3();
 
 export function createOverlay(mount) {
@@ -54,7 +54,9 @@ export function createOverlay(mount) {
 
       for (const f of fighters) {
         const b = barFor(f);
-        const p = f.alive ? toScreen(camera, f.pos.x, f.headY + f.lift, f.pos.z, w, h) : null;
+        // у прохожих полоска видна, только если их задели
+        const show = f.alive && !(f.neutral && f.hp >= f.maxHp);
+        const p = show ? toScreen(camera, f.pos.x, f.headY + f.lift, f.pos.z, w, h) : null;
         if (!p) { b.el.style.display = 'none'; continue; }
         b.el.style.display = '';
         b.el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`;

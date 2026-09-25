@@ -15,6 +15,7 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
   const input = useRef({ moveX: 0, moveY: 0, attack: false, ult: false, ultAim: null, ultFire: null }).current;
   const [hud, setHud] = useState({ ultCd: 0, ultFrac: 0, ultActive: false, combo: 0, special: false, ultAim: 'tap', dead: false, respawnIn: 0 });
   const reported = useRef(false);
+  const [reward, setReward] = useState(null);   // сколько уток дал матч (рейтинг)
 
   useEffect(() => {
     const game = createGame(mountRef.current, input, setHud, { modeId, heroId, ...options });
@@ -45,9 +46,9 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
     };
   }, [input, heroId, modeId, options, debug]);
 
-  // итог матча — один раз наверх (пригодится рейтингу)
+  // итог матча — один раз наверх: рейтинг раздаёт уток и возвращает, сколько получил игрок
   useEffect(() => {
-    if (hud.result && !reported.current) { reported.current = true; onResult?.(hud.result); }
+    if (hud.result && !reported.current) { reported.current = true; setReward(onResult?.(hud.result) ?? null); }
   }, [hud.result, onResult]);
 
   const score = hud.mode?.score;
@@ -64,6 +65,7 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
           {score?.map((s, i) => (
             <React.Fragment key={i}>
               {i > 0 && <span className="score-sep">{s.sep ?? ':'}</span>}
+              {s.icon && <span className="score-icon">{s.icon}</span>}
               <span className={`score-val score-${s.side}`}>{s.value}</span>
             </React.Fragment>
           ))}
@@ -81,7 +83,7 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
           </div>
         </div>
       )}
-      {hud.result && <MatchResult result={hud.result} onAgain={onAgain} onExit={onExit} />}
+      {hud.result && <MatchResult result={hud.result} reward={reward} onAgain={onAgain} onExit={onExit} />}
     </>
   );
 }

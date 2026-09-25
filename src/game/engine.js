@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { buildArena, ARENA } from './arena.js';
+import { buildArena, setMap, currentMap, ARENA } from './arena.js';
+import { mapById } from '../maps/index.js';
 import { createMatch } from './match.js';
 import { modeById } from '../modes/index.js';
 import { createLocalController, createBotController, ultPoint } from './controllers.js';
@@ -13,9 +14,11 @@ import { sound } from './sound.js';
 // Сам бой считает match.js, правила — режим (src/modes), бойцами управляют
 // контроллеры (controllers.js). React-интерфейс пишет в input и читает onHud.
 //
-// options: { modeId, heroId, botHeroId, playerName, autoplay, fast }
+// options: { modeId, heroId, botHeroId, playerName, botNames, botOptions, autoplay, fast, quality }
+//   botNames   — имена ботов (соперники из рейтинга), botOptions — { skill } мастерство ботов
 //   autoplay — локальным бойцом тоже управляет бот (автотесты, прогон баланса)
 //   fast     — шагов симуляции на кадр (ускоренная прокрутка для автотестов)
+//   quality  — 'high' (тени, чёткость) или 'low' (для слабых телефонов)
 // ============================================================
 
 const CAM_OFFSET = new THREE.Vector3(0, 14.5, 9.5);
@@ -31,8 +34,9 @@ export function createGame(mount, input, onHud, options = {}) {
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-  renderer.shadowMap.enabled = true;
+  const low = options.quality === 'low';
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, low ? 1 : 1.75));
+  renderer.shadowMap.enabled = !low;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const dom = renderer.domElement;
   dom.style.width = '100%';
@@ -61,6 +65,7 @@ export function createGame(mount, input, onHud, options = {}) {
   sun.shadow.bias = -0.0005;
   scene.add(sun, sun.target);
 
+  setMap(mapById(mode.map));
   buildArena(scene);
 
   const overlay = createOverlay(mount);
@@ -69,7 +74,7 @@ export function createGame(mount, input, onHud, options = {}) {
 
   // ---- матч и контроллеры ----
   const match = createMatch({ scene, fx, mode, options });
-  mode.setup(match, { heroId: options.heroId, botHeroId: options.botHeroId, playerName: options.playerName });
+  mode.setup(match, { heroId: options.heroId, botHeroId: options.botHeroId, playerName: options.playerName, botNames: options.botNames });
 
   const player = match.fighters.find((f) => f.control === 'local') ?? match.fighters[0];
   const controllers = new Map();
@@ -86,7 +91,8 @@ export function createGame(mount, input, onHud, options = {}) {
       if (e.type === 'damage') {
         overlay.spawnNumber(e.target, e.amount, e.target === player ? 'taken' : e.kind);
         if (e.target === player) sound.play('hurt');
-      } else if (e.type === 'say') overlay.spawnNumber(e.f, e.text, 'text');
+      } else if (e.type === 'heal') overlay.spawnNumber(e.target, `+${e.amount}`, 'heal');
+      else if (e.type === 'say') overlay.spawnNumber(e.f, e.text, 'text');
       else if (e.type === 'sfx') sound.play(e.name, e.opts);
       else if (e.type === 'death') sound.play('death');
       else if (e.type === 'respawn') sound.play('respawn');
@@ -122,11 +128,12 @@ export function createGame(mount, input, onHud, options = {}) {
     if (!frozen) match.step(dt, controllers);
     handleEvents();
     fx.update(dt);
+    match.world.pickups.animate(t);
 
     // --- модели ---
     for (const f of match.fighters) {
       if (f.kit) f.model.animate({ t, stride: f.stride, moving: f.moving, ...f.kit.pose() });
-      else f.model.animate?.({ t });
+      else f.model.animate?.({ t, stride: f.stride ?? 0, moving: !!f.moving, scared: f.scaredT > 0 });
       f.updateView(dt);
     }
 
@@ -147,6 +154,13 @@ export function createGame(mount, input, onHud, options = {}) {
     } else aim.hideUlt();
 
     updateCamera(dt);
+    // высокие кроны между камерой (она южнее) и героем — полупрозрачные
+    for (const o of currentMap().occluders ?? []) {
+      const p = o.group.position;
+      const hide = Math.abs(p.x - player.pos.x) < 2.2 && p.z > player.pos.z - 0.5 && p.z - player.pos.z < 5;
+      const target = hide ? 0.3 : 1;
+      for (const m of o.mats) m.opacity += (target - m.opacity) * Math.min(1, dt * 8);
+    }
     overlay.update(dt, camera, match.fighters);
 
     // --- HUD: ~10 раз в секунду и только при изменениях ---
@@ -164,14 +178,37 @@ export function createGame(mount, input, onHud, options = {}) {
         respawnIn: Number.isFinite(player.respawnIn) ? Math.ceil(player.respawnIn) : null,
         mode: mode.hud?.(match, player) ?? null,
         result: res && {
+          modeId: mode.id,
           win: res.winners.includes(player.team),
           place: res.places?.find((p) => p.f === player)?.place ?? null,
+          showPlace: !!mode.showPlace,
+          kills: player.kills,
+          // первое место по убийствам среди героев (для награды в «каждый сам за себя»)
+          topKills: player.kills > 0 && match.fighters.filter((f) => f.kit && f !== player).every((f) => f.kills <= player.kills),
           reason: res.reason ?? '',
+          participants: participants(res),
         },
       };
       const key = JSON.stringify(hud);
       if (key !== lastHud) { lastHud = key; onHud?.(hud); }
     }
+  };
+
+  // все герои матча с их итогом — по нему рейтинг раздаёт уток и ботам
+  const participants = (res) => {
+    const heroes = match.fighters.filter((f) => f.kit);
+    const placeOf = new Map((res.places ?? []).map((p) => [p.f, p.place]));
+    // кто ещё не выбыл, когда матч кончился (ты выбыл раньше) — занимают свободные места по здоровью
+    const free = heroes.map((_, i) => i + 1).filter((p) => ![...placeOf.values()].includes(p));
+    heroes.filter((f) => !placeOf.has(f)).sort((a, b) => b.hp - a.hp).forEach((f, i) => placeOf.set(f, free[i] ?? heroes.length));
+    return heroes.map((f) => ({
+      name: f.name,
+      isPlayer: f === player,
+      isBot: f.control === 'bot',
+      win: res.winners.includes(f.team),
+      place: placeOf.get(f),
+      topKills: f.kills > 0 && heroes.every((o) => o === f || o.kills <= f.kills),
+    }));
   };
 
   const loop = () => {
@@ -195,7 +232,7 @@ export function createGame(mount, input, onHud, options = {}) {
       match.dispose();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) o.material.dispose();
+        for (const m of [].concat(o.material ?? [])) m.dispose();
       });
       renderer.dispose();
       dom.remove();

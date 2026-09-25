@@ -2,6 +2,7 @@ import { resolveCollisions } from './arena.js';
 import { createFighter } from './fighter.js';
 import { heroById } from '../heroes/index.js';
 import { createProjectiles } from './combat.js';
+import { createPickups } from './pickups.js';
 
 // ============================================================
 // МАТЧ — симуляция боя без камеры, кнопок и экрана.
@@ -24,11 +25,13 @@ export function createMatch({ scene, fx, mode, options = {} }) {
   const fighters = [];
   const events = [];
   const projectiles = createProjectiles(scene);
+  const pickups = createPickups(scene);
 
   const world = {
     fighters,
     projectiles,
     fx,
+    pickups,
     time: 0,
     dangers: [],            // точки, куда вот-вот прилетит удар: { x, z, r, t, team } — боты их обходят
     damage(target, amount, from, kind) {
@@ -37,6 +40,7 @@ export function createMatch({ scene, fx, mode, options = {} }) {
       if (dealt > 0) events.push({ type: 'damage', target, amount: dealt, kind });
       return dealt;
     },
+    heal(f, amount) { if (amount > 0) events.push({ type: 'heal', target: f, amount }); },
     say(f, text) { events.push({ type: 'say', f, text }); },
     sfx(name, opts) { events.push({ type: 'sfx', name, opts }); },
   };
@@ -69,6 +73,13 @@ export function createMatch({ scene, fx, mode, options = {} }) {
       return f;
     },
 
+    // любой боец без приёмов героя (прохожий): двигает его режим
+    addFighter(f) {
+      f.addTo(scene);
+      fighters.push(f);
+      return f;
+    },
+
     // неподвижный объект с ХП: манекен, бутылка «Султан чая»
     addObject(f) {
       f.isStatic = true;
@@ -76,6 +87,9 @@ export function createMatch({ scene, fx, mode, options = {} }) {
       fighters.push(f);
       return f;
     },
+
+    // предмет на карте: 'cig' — усилитель, 'medkit' — аптечка
+    addPickup(kind, x, z, respawn) { return pickups.add(kind, x, z, respawn); },
 
     finish(result) {
       if (!match.result) {
@@ -168,6 +182,7 @@ export function createMatch({ scene, fx, mode, options = {} }) {
     }
 
     projectiles.update(dt, world);
+    pickups.update(dt, world);
 
     // таймеры, смерти, возрождения
     for (const f of fighters) {
@@ -176,7 +191,7 @@ export function createMatch({ scene, fx, mode, options = {} }) {
       if (f.alive !== was) {
         if (!f.alive) {
           const killer = f.lastHitBy && f.lastHitBy !== f ? f.lastHitBy : null;
-          if (killer && killer.team !== f.team) killer.kills += 1;
+          if (killer && killer.team !== f.team && f.kit) killer.kills += 1;   // прохожие и бутылки — не убийства
           events.push({ type: 'death', victim: f, killer });
           mode.onDeath?.(match, f, killer);
         } else {

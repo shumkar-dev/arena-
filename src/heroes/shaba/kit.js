@@ -49,7 +49,9 @@ export function createShabaKit(me) {
     aimAngle: 0,       // куда направлена текущая атака
   };
 
+  // бьёт всех, кого задел (и прохожих), а доворачивает только к врагам
   const enemies = (world) => world.fighters.filter((f) => f !== me && f.alive && f.team !== me.team);
+  const foes = (world) => enemies(world).filter((f) => !f.neutral);
 
   const dmgMul = () => (s.ultT > 0 ? T.ultDamageMul : 1);
 
@@ -68,7 +70,7 @@ export function createShabaKit(me) {
 
   const autoAim = (world) => {
     let best = null, bestD = T.autoAim;
-    for (const e of enemies(world)) {
+    for (const e of foes(world)) {
       const d = Math.hypot(e.pos.x - me.pos.x, e.pos.z - me.pos.z);
       if (d < bestD) { best = e; bestD = d; }
     }
@@ -174,7 +176,7 @@ export function createShabaKit(me) {
         me.pos.x += Math.sin(me.facing) * 4 * dt;
         me.pos.z += Math.cos(me.facing) * 4 * dt;
         const tgt = findTarget(world, T.grabReach);
-        if (tgt && !tgt.grabbedBy) {
+        if (tgt && !tgt.grabbedBy && !tgt.isObjective) {   // бутылку не схватишь
           s.victim = tgt;
           tgt.grabbedBy = me;
           world.sfx('grab');
