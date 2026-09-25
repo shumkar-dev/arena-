@@ -3,6 +3,8 @@
 // Адрес: ?ws=… в адресе страницы → VITE_ARENA_WS при сборке → сервер игры.
 // ============================================================
 
+import { PROTOCOL } from './protocol.js';
+
 const params = new URLSearchParams(location.search);
 export const SERVER_URL = params.get('ws') || import.meta.env.VITE_ARENA_WS || 'wss://vsadniki.duckdns.org/arena-ws';
 
@@ -10,14 +12,22 @@ export function createNet(url = SERVER_URL) {
   const handlers = new Map();          // тип сообщения → Set(функций)
   let ws = null;
   let pingTimer = 0;
+  let helloTimer = 0;
   const pings = [];
 
   const emit = (type, msg) => { for (const fn of handlers.get(type) ?? []) fn(msg); };
+  const setIssue = (issue) => {
+    if (issue === net.versionIssue) return;
+    net.versionIssue = issue;
+    emit('version', issue);
+  };
 
   const net = {
     status: 'idle',     // idle | connecting | open | closed
     ping: null,         // мс туда-обратно: сколько идёт сообщение до сервера и ответ обратно (медиана 5 замеров)
     lastSnap: 0,        // номер последнего полученного снимка — уходит серверу в командах
+    // версии не совпали: 'client' — устарела игра (обновить), 'server' — сервер ещё старый
+    versionIssue: null,
 
     /** Подписка на сообщения сервера и на 'open' / 'close' / 'ping'. Вернёт отписку. */
     on(type, fn) {
@@ -32,6 +42,9 @@ export function createNet(url = SERVER_URL) {
       ws = new WebSocket(url);
       ws.onopen = () => {
         net.status = 'open';
+        // сервер старой версии не присылает hello — через 4 с считаем, что он устарел
+        clearTimeout(helloTimer);
+        helloTimer = setTimeout(() => setIssue('server'), 4000);
         pings.length = 0;
         net.lastSnap = 0;
         emit('open');
@@ -55,11 +68,18 @@ export function createNet(url = SERVER_URL) {
           emit('ping', net.ping);
           return;
         }
+        if (m.t === 'hello') {
+          clearTimeout(helloTimer);
+          setIssue(m.pv === PROTOCOL ? null : m.pv > PROTOCOL ? 'client' : 'server');
+          return;
+        }
+        if (m.t === 'err' && m.code === 'version') setIssue('client');
         if (m.t === 'start') net.lastSnap = 0;   // у нового боя снимки считаются заново
         emit(m.t, m);
       };
       ws.onclose = () => {
         clearInterval(pingTimer);
+        clearTimeout(helloTimer);
         const was = net.status;
         net.status = 'closed';
         ws = null;
@@ -78,8 +98,8 @@ export function createNet(url = SERVER_URL) {
       net.connect();
     },
 
-    create(name, hero, ducks) { net.whenOpen({ t: 'create', name, hero, ducks }); },
-    join(code, name, hero, ducks) { net.whenOpen({ t: 'join', code, name, hero, ducks }); },
+    create(name, hero, ducks) { net.whenOpen({ t: 'create', name, hero, ducks, pv: PROTOCOL }); },
+    join(code, name, hero, ducks) { net.whenOpen({ t: 'join', code, name, hero, ducks, pv: PROTOCOL }); },
     mode(mode) { net.send({ t: 'mode', mode }); },
     hero(hero) { net.send({ t: 'hero', hero }); },
     team(team) { net.send({ t: 'team', team }); },

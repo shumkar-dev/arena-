@@ -16,6 +16,8 @@ import DuckIcon from './ui/DuckIcon.jsx';
 import NameModal from './ui/menu/NameModal.jsx';
 import { goLandscape, usePortrait } from './ui/orientation.js';
 import FriendPlay from './ui/menu/FriendPlay.jsx';
+import UpdateBanner from './ui/UpdateBanner.jsx';
+import { useUpdateAvailable } from './ui/update.js';
 import { createNet } from './net/client.js';
 
 const params = new URLSearchParams(location.search);
@@ -53,6 +55,8 @@ export default function App() {
   const [netReward, setNetReward] = useState(null); // утки за последний сетевой бой
   const [netNotice, setNetNotice] = useState('');   // связь потеряна — бой не продолжить
   const [netToast, setNetToast] = useState('');     // «игрок вышел — за него бот»
+  const [versionIssue, setVersionIssue] = useState(null);   // версии игры и сервера не совпали
+  const updateAvailable = useUpdateAvailable();
   const netGameRef = useRef(null);
   netGameRef.current = netGame;
   const nameRef = useRef('Игрок');
@@ -82,6 +86,7 @@ export default function App() {
         setNetReward({ delta: entries[0].delta, after, rank, rankUp: rank.index > was.index, rankDown: rank.index < was.index });
       }),
       net.on('left', (m) => toast(`${m.name} вышел — за него играет бот`)),
+      net.on('version', (issue) => setVersionIssue(issue)),
       net.on('err', (m) => toast(m.msg)),
       net.on('close', () => { setLobby(null); setNetNotice((n) => n || 'Связь с сервером потеряна'); }),
     ];
@@ -160,12 +165,12 @@ export default function App() {
   if (view === 'arena-net' && netGame) {
     body = (
       <Arena key={`net-${netGame.n}`} modeId="online" heroId={netGame.roster[netGame.you].hero} options={netOptions} debug={debug}
-        onExit={leaveNet} onAgain={() => setView('friend')} againLabel="В комнату" reward={netReward} notice={netNotice} toast={netToast} audio={audio} />
+        onExit={leaveNet} onAgain={() => setView('friend')} againLabel="В комнату" reward={netReward} notice={netNotice} toast={netToast} audio={audio} updateAvailable={updateAvailable} />
     );
   } else if (view === 'friend') {
-    body = <FriendPlay net={net} lobby={lobby} heroId={prefs.heroId} playerName={playerName} ducks={ducks} onHero={(id) => update({ heroId: id })} onLeave={() => { net.leave(); setLobby(null); }} onBack={toMenu} />;
+    body = <FriendPlay net={net} lobby={lobby} heroId={prefs.heroId} playerName={playerName} ducks={ducks} onHero={(id) => update({ heroId: id })} versionIssue={versionIssue} onLeave={() => { net.leave(); setLobby(null); }} onBack={toMenu} />;
   } else if (view === 'arena') {
-    body = <Arena key={`${prefs.modeId}-${prefs.heroId}-${round}`} modeId={prefs.modeId} heroId={prefs.heroId} options={options} debug={debug} onExit={toMenu} onAgain={again} onResult={onResult} audio={audio} />;
+    body = <Arena key={`${prefs.modeId}-${prefs.heroId}-${round}`} modeId={prefs.modeId} heroId={prefs.heroId} options={options} debug={debug} onExit={toMenu} onAgain={again} onResult={onResult} audio={audio} updateAvailable={updateAvailable} />;
   } else if (view === 'modes') {
     body = <ModeSelect modeId={prefs.modeId} onPick={(id) => { update({ modeId: id }); setView('main'); }} onBack={toMenu} />;
   } else if (view === 'heroes') {
@@ -195,6 +200,7 @@ export default function App() {
       >
         {muted ? '🔇' : '🔊'}
       </button>
+      {updateAvailable && !view.startsWith('arena') && <UpdateBanner />}
       {needName && <NameModal onSave={(name) => update({ playerName: name })} />}
       <div className={`rotate-hint ${portrait ? 'show' : ''}`}>
         <div className="rotate-phone" />
