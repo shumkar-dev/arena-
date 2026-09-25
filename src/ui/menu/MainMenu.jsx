@@ -2,6 +2,7 @@ import React from 'react';
 import HeroStage from './HeroStage.jsx';
 import { heroById } from '../../heroes/index.js';
 import { modeById } from '../../modes/index.js';
+import DuckIcon from '../DuckIcon.jsx';
 
 // Главный экран: герой на подиуме, «Играть», режим, герои, рейтинг, настройки.
 export default function MainMenu({ prefs, onPlay, go, rankBadge }) {
@@ -16,7 +17,7 @@ export default function MainMenu({ prefs, onPlay, go, rankBadge }) {
         </div>
         {rankBadge}
         <button className="bs-btn menu-wide" onClick={() => go('heroes')}>🦸 Герои</button>
-        <button className="bs-btn menu-wide" onClick={() => go('rating')}>🦆 Рейтинг</button>
+        <button className="bs-btn menu-wide" onClick={() => go('rating')}><DuckIcon /> Рейтинг</button>
         <button className="bs-btn menu-wide" onClick={() => go('settings')}>⚙️ Настройки</button>
       </div>
 

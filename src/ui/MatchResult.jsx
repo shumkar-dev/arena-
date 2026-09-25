@@ -1,4 +1,5 @@
 import React from 'react';
+import DuckIcon from './DuckIcon.jsx';
 
 // Итог матча: «Победа» / «Поражение» (или место), счёт, утки, кнопки «Ещё раз» и «В меню».
 // reward: { delta, after, rank, rankUp, rankDown } — от рейтинга (в тренировке нет)
@@ -12,7 +13,7 @@ export default function MatchResult({ result, reward, onAgain, onExit }) {
         {reward && (
           <div className="result-reward">
             <span className={`reward-delta ${reward.delta > 0 ? 'up' : reward.delta < 0 ? 'down' : ''}`}>
-              🦆 {reward.delta > 0 ? `+${reward.delta}` : reward.delta}
+              <DuckIcon /> {reward.delta > 0 ? `+${reward.delta}` : reward.delta}
             </span>
             <span className="reward-total">{reward.after} · <b style={{ color: reward.rank.color }}>{reward.rank.name}</b></span>
             {reward.rankUp && <span className="reward-rank">Новое звание: {reward.rank.name}!</span>}

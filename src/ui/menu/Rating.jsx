@@ -4,6 +4,7 @@ import ModelStage from './ModelStage.jsx';
 import { createDuck } from '../../characters/duck.js';
 import { RANKS, rankOf } from '../../rating/ranks.js';
 import { fetchLeaderboard, online } from '../../rating/store.js';
+import DuckIcon from '../DuckIcon.jsx';
 
 // Рейтинг: твоя утка и звание, лестница званий и общая таблица (игроки и боты).
 export default function Rating({ ducks, playerName, onBack, onDucks }) {
@@ -29,11 +30,11 @@ export default function Rating({ ducks, playerName, onBack, onDucks }) {
       <TopBar title="Рейтинг" onBack={onBack} right={<span className="rating-status">{status}</span>} />
       <div className="rating">
         <div className="bs-panel rating-me">
-          <ModelStage create={createDuck} className="duck-stage" distance={6.2} lookY={1.15} />
-          <div className="rating-ducks">🦆 {ducks}</div>
+          <ModelStage create={createDuck} className="duck-stage" distance={7.2} lookY={1.45} />
+          <div className="rating-ducks"><DuckIcon /> {ducks}</div>
           <div className="rating-rank" style={{ color: rank.color }}>{rank.name}</div>
           <div className="rank-bar"><i style={{ width: `${Math.round(progress * 100)}%`, background: rank.color }} /></div>
-          <div className="rank-next">{rank.next ? `До звания «${rank.next.name}»: ${rank.next.from - ducks} 🦆` : 'Высшее звание'}</div>
+          <div className="rank-next">{rank.next ? <>До звания «{rank.next.name}»: {rank.next.from - ducks} <DuckIcon /></> : 'Высшее звание'}</div>
         </div>
 
         <div className="bs-panel rating-ladder">
@@ -59,7 +60,7 @@ export default function Rating({ ducks, playerName, onBack, onDucks }) {
                 <span className="board-place">{i + 1}</span>
                 <span className="board-name">{r.isBot && <span className="board-bot" title="Бот">🤖</span>}{r.name}</span>
                 <span className="board-rank" style={{ color: rr.color }}>{rr.name}</span>
-                <span className="board-ducks">{r.ducks} 🦆</span>
+                <span className="board-ducks">{r.ducks} <DuckIcon /></span>
               </div>
             );
           })}

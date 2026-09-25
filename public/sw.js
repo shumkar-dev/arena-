@@ -1,5 +1,5 @@
 // Простой офлайн-кэш: страница — сначала сеть, ассеты со слепком в имени — сначала кэш.
-const CACHE = 'arena-v1';
+const CACHE = 'arena-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
