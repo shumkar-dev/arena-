@@ -7,7 +7,11 @@ import { pointBlocked } from './arena.js';
 
 export const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
-export const enemiesOf = (me, world) => world.fighters.filter((f) => f !== me && f.alive && f.team !== me.team);
+// враги — кого выбирать целью (прохожие-нейтралы не враги: в них не целятся)
+export const enemiesOf = (me, world) => world.fighters.filter((f) => f !== me && f.alive && f.team !== me.team && !f.neutral);
+
+// кого задевает удар или взрыв — враги и прохожие (они живое укрытие)
+export const hittablesOf = (me, world) => world.fighters.filter((f) => f !== me && f.alive && f.team !== me.team);
 
 export const dist2d = (a, b) => Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z);
 
@@ -32,7 +36,7 @@ export function aimAttack(me, world, dir, autoAim) {
 // враги в конусе перед бойцом: reach — досягаемость сверх радиусов обоих
 export function enemiesInCone(me, world, reach, arc) {
   const out = [];
-  for (const e of enemiesOf(me, world)) {
+  for (const e of hittablesOf(me, world)) {
     const dx = e.pos.x - me.pos.x, dz = e.pos.z - me.pos.z;
     const d = Math.hypot(dx, dz);
     if (d > me.radius + e.radius + reach) continue;
@@ -55,7 +59,7 @@ export function lineClear(x1, z1, x2, z2) {
 
 // враги в круге (x, z, r) — для взрывов и вращений
 export function enemiesInRadius(me, world, x, z, r) {
-  return enemiesOf(me, world).filter((e) => Math.hypot(e.pos.x - x, e.pos.z - z) <= r + e.radius);
+  return hittablesOf(me, world).filter((e) => Math.hypot(e.pos.x - x, e.pos.z - z) <= r + e.radius);
 }
 
 /**

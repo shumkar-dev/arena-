@@ -73,6 +73,13 @@ export function createMatch({ scene, fx, mode, options = {} }) {
       return f;
     },
 
+    // любой боец без приёмов героя (прохожий): двигает его режим
+    addFighter(f) {
+      f.addTo(scene);
+      fighters.push(f);
+      return f;
+    },
+
     // неподвижный объект с ХП: манекен, бутылка «Султан чая»
     addObject(f) {
       f.isStatic = true;
@@ -184,7 +191,7 @@ export function createMatch({ scene, fx, mode, options = {} }) {
       if (f.alive !== was) {
         if (!f.alive) {
           const killer = f.lastHitBy && f.lastHitBy !== f ? f.lastHitBy : null;
-          if (killer && killer.team !== f.team) killer.kills += 1;
+          if (killer && killer.team !== f.team && f.kit) killer.kills += 1;   // прохожие и бутылки — не убийства
           events.push({ type: 'death', victim: f, killer });
           mode.onDeath?.(match, f, killer);
         } else {

@@ -2,7 +2,7 @@ import React from 'react';
 
 // Итог матча: «Победа» / «Поражение» (или место), счёт, кнопки «Ещё раз» и «В меню».
 export default function MatchResult({ result, onAgain, onExit }) {
-  const title = result.win ? 'Победа' : result.place && result.place > 2 ? `${result.place} место` : 'Поражение';
+  const title = result.win ? 'Победа' : result.showPlace && result.place ? `${result.place} место` : 'Поражение';
   return (
     <div className={`result ${result.win ? 'win' : 'lose'}`}>
       <div className="result-box">
