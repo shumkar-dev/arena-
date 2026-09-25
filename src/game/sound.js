@@ -16,6 +16,7 @@ let reverb = null;     // вход реверберации
 let noiseBuf = null;
 let drive = null;      // кривая мягкого перегруза
 let muted = false;
+let volume = 0.8;       // 0..1, из настроек
 try { muted = localStorage.getItem(STORE_KEY) === '1'; } catch { /* приватный режим — звук включён */ }
 
 const lastPlayed = new Map();   // имя → время, чтобы одинаковые звуки не сливались в кашу
@@ -29,7 +30,7 @@ function ensure() {
 
   // общий выход: компрессор держит громкие взрывы поверх ударов
   const out = ctx.createGain();
-  out.gain.value = muted ? 0 : MASTER;
+  out.gain.value = muted ? 0 : MASTER * volume;
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -16;
   comp.knee.value = 12;
@@ -371,6 +372,11 @@ export const sound = {
     muted = v;
     try { localStorage.setItem(STORE_KEY, v ? '1' : '0'); } catch { /* не сохранилось — не страшно */ }
     if (v) sound.stopAll();
-    if (master) master.out.gain.setTargetAtTime(v ? 0 : MASTER, ctx.currentTime, 0.02);
+    if (master) master.out.gain.setTargetAtTime(v ? 0 : MASTER * volume, ctx.currentTime, 0.02);
+  },
+  get volume() { return volume; },
+  setVolume(v) {
+    volume = Math.max(0, Math.min(1, v));
+    if (master && !muted) master.out.gain.setTargetAtTime(MASTER * volume, ctx.currentTime, 0.02);
   },
 };
