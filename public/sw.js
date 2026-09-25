@@ -1,5 +1,10 @@
-// Простой офлайн-кэш: страница — сначала сеть, ассеты со слепком в имени — сначала кэш.
-const CACHE = 'arena-v3';
+// Офлайн-кэш игры.
+//   • страница и version.json — всегда из сети, мимо HTTP-кэша (иначе телефон держит старую
+//     версию); без сети — из кэша;
+//   • ассеты со слепком в имени (JS, CSS), звуки и картинки — сначала кэш.
+// Регистрируется как sw.js?v=<версия>: у каждой версии свой кэш, старые удаляются.
+const VERSION = new URL(self.location.href).searchParams.get('v') || 'dev';
+const CACHE = `arena-${VERSION}`;
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
@@ -10,15 +15,21 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+const fresh = (req) => fetch(req.url, { cache: 'no-store', credentials: 'same-origin' });
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== location.origin) return;
 
-  if (req.mode === 'navigate') {
+  if (req.mode === 'navigate' || url.pathname.endsWith('/version.json')) {
     e.respondWith(
-      fetch(req)
-        .then((res) => { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return res; })
-        .catch(() => caches.match(req))
+      fresh(req)
+        .then((res) => {
+          if (res.ok && req.mode === 'navigate') { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+          return res;
+        })
+        .catch(() => caches.match(req, { ignoreSearch: true }))
     );
     return;
   }

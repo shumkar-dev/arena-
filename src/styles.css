@@ -564,3 +564,14 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 .hero-chip { border-left: 5px solid var(--hero, #888); }
 .lobby-mode-name { font-size: 17px; font-weight: 600; }
 .lobby-slot:not(.empty) { border-left: 5px solid var(--hero, #1a0306); }
+
+/* ---- обновление игры ---- */
+.update-banner {
+  position: absolute; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9;
+  display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 16px; white-space: nowrap;
+  background: rgba(26, 3, 6, 0.92); border: 2px solid var(--gold); border-radius: 12px;
+  font-weight: 600; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4);
+}
+.update-banner.in-result { position: static; transform: none; margin: 14px auto 0; width: max-content; }
+.version-notice { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 24px; text-align: center; max-width: 420px; }
+.version-title { font-size: 26px; font-weight: 600; text-transform: uppercase; color: var(--gold); text-shadow: 0 3px 0 #1a0306; }

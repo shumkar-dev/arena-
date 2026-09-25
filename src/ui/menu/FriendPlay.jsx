@@ -3,6 +3,7 @@ import TopBar from './TopBar.jsx';
 import { heroById, HEROES } from '../../heroes/index.js';
 import { modeById } from '../../modes/index.js';
 import { ONLINE_MODES, teamOfSlot } from '../../net/protocol.js';
+import { VersionNotice } from '../UpdateBanner.jsx';
 
 // «Играть с другом» — комнаты по коду. Сначала лобби, режим потом:
 //  • без комнаты: «Создать комнату» или войти по коду;
@@ -10,7 +11,8 @@ import { ONLINE_MODES, teamOfSlot } from '../../net/protocol.js';
 //    у создателя — выбор режима и «Старт». Места и боты подстраиваются под режим,
 //    в 2 на 2 можно перейти в другую команду. После боя все возвращаются сюда же.
 // Когда бой начнётся, сервер пришлёт start — его ловит App и открывает арену.
-export default function FriendPlay({ net, lobby, heroId, playerName, ducks, onHero, onLeave, onBack }) {
+// versionIssue — версии игры и сервера не совпали: вместо непонятной ошибки — «Обнови игру»
+export default function FriendPlay({ net, lobby, heroId, playerName, ducks, onHero, versionIssue, onLeave, onBack }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -19,7 +21,7 @@ export default function FriendPlay({ net, lobby, heroId, playerName, ducks, onHe
   useEffect(() => {
     const offs = [
       net.on('lobby', () => { setBusy(false); setError(''); }),
-      net.on('err', (m) => { setBusy(false); setError(m.msg); }),
+      net.on('err', (m) => { setBusy(false); setError(m.code === 'version' ? '' : m.msg); }),
       net.on('close', () => { setBusy(false); setError('Нет связи с сервером. Проверь интернет и попробуй ещё раз.'); }),
     ];
     return () => offs.forEach((off) => off());
@@ -34,7 +36,15 @@ export default function FriendPlay({ net, lobby, heroId, playerName, ducks, onHe
     net.join(code, playerName, heroId, ducks);
   };
 
-  if (lobby) return <Lobby net={net} lobby={lobby} error={error} onHero={onHero} onLeave={onLeave} />;
+  if (lobby && !versionIssue) return <Lobby net={net} lobby={lobby} error={error} onHero={onHero} onLeave={onLeave} />;
+  if (versionIssue) {
+    return (
+      <div className="menu">
+        <TopBar title="Играть с другом" onBack={lobby ? onLeave : onBack} />
+        <div className="friend"><VersionNotice issue={versionIssue} /></div>
+      </div>
+    );
+  }
 
   return (
     <div className="menu">

@@ -12,7 +12,7 @@ const KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1],
 // Экран боя: 3D-арена, джойстик, кнопки, счёт режима, итог матча.
 // reward — утки, если их считает не onResult, а сетевой итог (App); toast — короткое сообщение сверху
 // audio — { prefs, onChange, muted }: ползунки громкости прямо в бою (кнопка ⚙, бой не останавливается)
-export default function Arena({ modeId, heroId, options, debug, onExit, onAgain, onResult, againLabel, reward: rewardProp, notice, toast, audio }) {
+export default function Arena({ modeId, heroId, options, debug, onExit, onAgain, onResult, againLabel, reward: rewardProp, notice, toast, audio, updateAvailable }) {
   const hero = heroById(heroId);
   const mountRef = useRef(null);
   const input = useRef({ moveX: 0, moveY: 0, attack: false, ult: false, ultAim: null, ultFire: null }).current;
@@ -109,7 +109,7 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
           </div>
         </div>
       )}
-      {hud.result && !notice && <MatchResult result={hud.result} reward={rewardProp ?? reward} againLabel={againLabel} onAgain={onAgain} onExit={onExit} />}
+      {hud.result && !notice && <MatchResult result={hud.result} reward={rewardProp ?? reward} againLabel={againLabel} updateAvailable={updateAvailable} onAgain={onAgain} onExit={onExit} />}
     </>
   );
 }

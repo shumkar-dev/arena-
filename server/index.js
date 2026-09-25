@@ -11,7 +11,7 @@ import { HEROES } from '../src/heroes/index.js';
 import { modeById } from '../src/modes/index.js';
 import { rewardFor, botSkill } from '../src/rating/ranks.js';
 import {
-  TICK, CODE_ALPHABET, NAME_MAX,
+  TICK, CODE_ALPHABET, NAME_MAX, PROTOCOL,
   validHero, decodeCmd, packFighter, diffFighter, encodePickups, createOnlineMode, SNAP_RATE,
   onlineModeId, slotsOf, teamOfSlot,
 } from '../src/net/protocol.js';
@@ -325,8 +325,12 @@ const cleanName = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, NA
 const cleanDucks = (d) => Math.max(0, Math.min(5000, Math.round(Number(d) || 0)));
 const newPlayer = (ws, msg) => ({ ws, name: cleanName(msg.name), hero: validHero(msg.hero), ducks: cleanDucks(msg.ducks), input: null });
 
+const OUTDATED = { t: 'err', code: 'version', msg: 'Обнови игру: вышла новая версия. Закрой и открой её заново.' };
+
 function onMessage(ws, msg) {
   const room = ws.room;
+  // игра старой версии не поймёт снимки — просим обновиться, а не падаем непонятно
+  if ((msg.t === 'create' || msg.t === 'join') && msg.pv !== PROTOCOL) { send(ws, OUTDATED); return; }
   switch (msg.t) {
     case 'in': {
       const p = room?.slots[room.slotOf(ws)];
@@ -394,6 +398,7 @@ const wss = new WebSocketServer({ server, maxPayload: 4096, perMessageDeflate: {
 wss.on('connection', (ws) => {
   ws.alive = true;
   ws.room = null;
+  send(ws, { t: 'hello', pv: PROTOCOL });
   let msgs = 0, windowStart = Date.now();
   ws.on('pong', () => { ws.alive = true; });
   ws.on('message', (data) => {
