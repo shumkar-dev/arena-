@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createChain, nearestEnemy, faceTowards, enemiesInRadius, dist2d } from '../combat.js';
+import { createChain, aimAttack, nearestEnemy, faceTowards, enemiesInRadius, dist2d } from '../combat.js';
 
 // ============================================================
 // ПРИЁМЫ ЧЁРНОГО ИЗЮМА
@@ -54,6 +54,7 @@ export function createIzyumKit(me) {
     const rx = Math.cos(me.facing), rz = -Math.sin(me.facing);
     const blast = (x, z) => {
       world.fx.explosion(x, z, T.blastRadius, 0xb04a8a);
+      world.sfx('explosion', { size: 0.45 });
       for (const e of enemiesInRadius(me, world, x, z, T.blastRadius)) world.damage(e, T.blastDamage, me, 'grab');
     };
     world.projectiles.spawn({
@@ -69,7 +70,7 @@ export function createIzyumKit(me) {
       spin: special ? 10 : 0,
       onHit(target, p) {
         if (special) blast(p.x, p.z);
-        else { world.damage(target, T.shotDamage, me, 'hit'); world.fx.spark(p.x, 1.8, p.z, 0xb04a8a); chain.hit(); }
+        else { world.damage(target, T.shotDamage, me, 'hit'); world.fx.spark(p.x, 1.8, p.z, 0xb04a8a); world.sfx('impact'); chain.hit(); }
       },
       onEnd(p) {
         if (special) blast(p.x, p.z);
@@ -84,12 +85,18 @@ export function createIzyumKit(me) {
     get busy() { return s.ultT > 0; },   // в ульте движением управляет сам приём
     get speedMul() { return 1; },
 
-    attack() { chain.press(); },
+    attack(dir) { chain.press(dir); },
+    // форма прицела атаки: линия выстрела; у третьей — круг взрыва на конце
+    attackShape() {
+      return { type: 'line', length: T.shotRange, width: T.shotRadius * 2, endRadius: chain.special ? T.blastRadius : 0 };
+    },
+
 
     ult(aim, world) {
       if (!me.canAct() || s.ultCd > 0) return;
       const tgt = nearestEnemy(me, world, T.ultSearch);
-      if (!tgt) { world.say(me, 'Нет цели'); return; }   // без цели ульта не тратится
+      if (!tgt) { world.say(me, 'Нет цели'); world.sfx('noTarget'); return; }   // без цели ульта не тратится
+      world.sfx('ultIzyum');
       s.target = tgt;
       s.ultT = T.ultDuration;
       s.ultCd = T.ultCooldown;
@@ -122,6 +129,7 @@ export function createIzyumKit(me) {
               s.punchAnim = 0;
               s.punchSide = -s.punchSide;
               world.damage(tgt, T.punchDamage, me, 'grab');
+              world.sfx('punch');
             }
           }
         } else s.moving = false;
@@ -134,8 +142,7 @@ export function createIzyumKit(me) {
 
       const free = s.shotT < 0 && s.ultT <= 0 && me.canAct();
       if (chain.tick(dt, free)) {
-        const tgt = nearestEnemy(me, world, T.autoAim);
-        if (tgt) faceTowards(me, tgt.pos.x, tgt.pos.z);
+        aimAttack(me, world, chain.dir, T.autoAim);
         s.shotT = 0;
         s.released = false;
         s.special = chain.special;
@@ -144,7 +151,7 @@ export function createIzyumKit(me) {
       }
       if (s.shotT >= 0) {
         s.shotT += dt / T.shotTime;
-        if (!s.released && s.shotT >= T.releaseAt) { s.released = true; fire(world); }
+        if (!s.released && s.shotT >= T.releaseAt) { s.released = true; fire(world); world.sfx('shot'); }
         if (s.shotT >= 1) s.shotT = -1;
       }
     },

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createBee } from '../characters/gargashmel.js';
+import { pointBlocked } from './arena.js';
 
 // ============================================================
 // ВИЗУАЛЬНЫЕ ЭФФЕКТЫ — живут несколько десятых секунды и исчезают.
@@ -89,13 +90,68 @@ export function createEffects(scene) {
       add(m, 0.18, (k) => { m.scale.setScalar(0.25 + k * 0.5); mat.opacity = 1 - k; });
     },
 
+    // струя сметаны (ульта Смитаны): поток белых кубиков конусом.
+    // Вернёт { emit(x, y, z, angle, arc, reach, dt), stop() }; частицы упираются в укрытия.
+    stream() {
+      const mat = new THREE.MeshStandardMaterial({ color: 0xfbfaf4, roughness: 0.35, transparent: true });
+      const g = new THREE.Group();
+      const parts = [];
+      let acc = 0, stopped = false;
+      const SPEED = 12;
+      const handle = {
+        emit(x, y, z, angle, arc, reach, dt) {
+          acc += dt * 110;   // частиц в секунду
+          while (acc >= 1) {
+            acc -= 1;
+            const a = angle + (Math.random() * 2 - 1) * arc * 0.85;
+            const m = parts.find((p) => !p.visible) ?? (() => {
+              const n = new THREE.Mesh(cube, mat);
+              n.castShadow = true;
+              g.add(n); parts.push(n);
+              return n;
+            })();
+            m.visible = true;
+            m.position.set(x, y, z);
+            m.userData.vx = Math.sin(a) * SPEED;
+            m.userData.vz = Math.cos(a) * SPEED;
+            m.userData.vy = -2.2 - Math.random() * 1.5;   // струя провисает к земле
+            m.userData.age = 0;
+            m.userData.life = reach / SPEED;
+            m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+          }
+        },
+        stop() { stopped = true; },
+      };
+      add(g, Infinity, (k, age) => {
+        const dt = age - (g.userData.last ?? age);
+        g.userData.last = age;
+        let alive = 0;
+        for (const m of parts) {
+          if (!m.visible) continue;
+          const u = m.userData;
+          u.age += dt;
+          m.position.x += u.vx * dt;
+          m.position.z += u.vz * dt;
+          m.position.y = Math.max(0.15, m.position.y + u.vy * dt);
+          const t = u.age / u.life;
+          m.scale.setScalar(0.3 + t * 0.75);   // струя расширяется и густеет к концу
+          if (t >= 1 || pointBlocked(m.position.x, m.position.z, 0.05)) m.visible = false;
+          else alive++;
+        }
+        mat.opacity = 0.95;
+        // закончить эффект, когда струю выключили и последние капли долетели
+        if (stopped && alive === 0) g.userData.done = true;
+      });
+      return handle;
+    },
+
     update(dt) {
       for (let i = list.length - 1; i >= 0; i--) {
         const e = list[i];
         e.age += dt;
         const k = Math.min(1, e.age / e.life);
         e.update(k, e.age);
-        if (k >= 1) {
+        if (k >= 1 || e.obj.userData.done) {
           scene.remove(e.obj);
           e.obj.traverse((o) => {
             if (o.material) o.material.dispose();

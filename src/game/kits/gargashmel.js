@@ -1,4 +1,4 @@
-import { createChain, nearestEnemy, faceTowards, enemiesInCone, enemiesInRadius } from '../combat.js';
+import { createChain, aimAttack, faceTowards, enemiesInCone, enemiesInRadius } from '../combat.js';
 
 // ============================================================
 // ПРИЁМЫ ГАРГАШМЕЛЯ
@@ -37,11 +37,14 @@ export function createGargashmelKit(me) {
   return {
     ultAim: 'drag',
     ultRange: T.ultRange,
-    ultRadius: T.ultRadius,
+    // форма прицела ульты: круг взрыва в точке на расстоянии до ultRange
+    ultShape: { type: 'circle', range: T.ultRange, radius: T.ultRadius },
     get busy() { return false; },
     get speedMul() { return 1; },
 
-    attack() { chain.press(); },
+    attack(dir) { chain.press(dir); },
+    // форма прицела атаки: конус перед собой
+    attackShape() { return { type: 'cone', reach: me.radius + T.whipReach + 0.4, arc: T.whipArc }; },
 
     // aim — { x, z } точка на земле; дальше радиуса ульты не бросает
     ult(aim, world) {
@@ -55,6 +58,8 @@ export function createGargashmelKit(me) {
       if (d > 0.5) faceTowards(me, x, z);
       world.fx.explosion(x, z, T.ultRadius, 0xffc23a);
       world.fx.bee(x, z);
+      world.sfx('bee');
+      world.sfx('explosion', { size: 1 });
       for (const e of enemiesInRadius(me, world, x, z, T.ultRadius)) world.damage(e, T.ultDamage, me, 'grab');
     },
 
@@ -65,10 +70,10 @@ export function createGargashmelKit(me) {
 
       const free = s.whipT < 0 && me.canAct();
       if (chain.tick(dt, free)) {
-        const tgt = nearestEnemy(me, world, T.autoAim);
-        if (tgt) faceTowards(me, tgt.pos.x, tgt.pos.z);
+        aimAttack(me, world, chain.dir, T.autoAim);
         s.whipT = 0;
         s.hitDone = false;
+        world.sfx('whip');
         s.special = chain.special;
         s.side = -s.side;
         chain.startCooldown(T.attackCooldown * speedK());
@@ -80,9 +85,11 @@ export function createGargashmelKit(me) {
           s.hitDone = true;
           const hits = enemiesInCone(me, world, T.whipReach, T.whipArc);
           for (const e of hits) world.damage(e, T.whipDamage, me, 'hit');
+          if (hits.length) world.sfx('punch');
           if (s.special) {
             chain.consume();
             me.addEffect('frenzy', T.frenzyTime);
+            world.sfx('frenzy');
           } else if (hits.length) chain.hit();
           else chain.miss();
         }
