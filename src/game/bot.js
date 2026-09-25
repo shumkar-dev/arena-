@@ -29,18 +29,28 @@ export const randomBotName = (taken = []) => {
   return free[Math.floor(Math.random() * free.length)] ?? 'Бот';
 };
 
-const THINK = 0.15;          // как часто бот принимает решения об атаке и ульте, с
-const AIM_ERROR = 0.06;      // разброс прицела, рад
-const DODGE_CHANCE = 0.8;    // от скольких снарядов пытается увернуться
+// Мастерство бота. По умолчанию — сильный бот; в рейтинговых матчах мастерство
+// зависит от звания игрока (src/rating/ranks.js → botSkill).
+export const DEFAULT_SKILL = {
+  think: 0.15,     // как часто бот принимает решения об атаке и ульте (реакция), с
+  aimError: 0.06,  // разброс прицела, рад
+  dodge: 0.8,      // от какой доли снарядов пытается увернуться
+  lead: 1,         // насколько учитывает движение цели (0 — стреляет туда, где цель сейчас)
+  hide: true,      // прячется ли за укрытие, когда ранен
+  ultDelay: 0.3,   // сколько «думает», прежде чем бросить готовую ульту, с
+};
 
 const norm = (x, z) => { const l = Math.hypot(x, z) || 1; return { x: x / l, z: z / l }; };
 const dist = (a, b) => Math.hypot(b.x - a.x, b.z - a.z);
 
-// opts: { role } — 'attack' (идёт бить чужие бутылки) или 'defend' (сторожит свои);
-// без бутылок на карте роль не важна
+// opts: { role, skill }
+//   role — 'attack' (идёт бить чужие бутылки) или 'defend' (сторожит свои); без бутылок не важна
+//   skill — мастерство (см. DEFAULT_SKILL), можно передать только часть полей
 export function createBot(me, opts = {}) {
   const prof = me.hero.bot;
   const role = opts.role ?? me.botRole ?? 'attack';
+  const sk = { ...DEFAULT_SKILL, ...opts.skill };
+  const THINK = sk.think;
   const s = {
     think: Math.random() * THINK,
     strafe: Math.random() < 0.5 ? 1 : -1,
@@ -112,7 +122,7 @@ export function createBot(me, opts = {}) {
     // снаряды, летящие в нас
     for (const p of world.projectiles.list) {
       if (p.owner.team === me.team) continue;
-      if (!s.seen.has(p)) s.seen.set(p, Math.random() < DODGE_CHANCE);
+      if (!s.seen.has(p)) s.seen.set(p, Math.random() < sk.dodge);
       if (!s.seen.get(p)) continue;
       const sp = Math.hypot(p.vx, p.vz) || 1;
       const ux = p.vx / sp, uz = p.vz / sp;
@@ -238,7 +248,7 @@ export function createBot(me, opts = {}) {
       const item = wantPickup(world, enemy);
 
       // ранен и под огнём — за укрытие (кроме ближников вплотную: им лучше добивать)
-      if (s.hideT <= 0 && s.hurtT < 0.3 && me.hp < me.maxHp * 0.45 && !enemy.isStatic && !(prof.melee && d < prof.range + 0.5) && !hud.ultActive) {
+      if (sk.hide && s.hideT <= 0 && s.hurtT < 0.3 && me.hp < me.maxHp * 0.45 && !enemy.isStatic && !(prof.melee && d < prof.range + 0.5) && !hud.ultActive) {
         s.hideSpot = findCover(enemy);
         if (s.hideSpot) { s.hideT = 1.4; stats.hides += 1; }
       }
@@ -296,8 +306,8 @@ export function createBot(me, opts = {}) {
       const ultReady = hud.ultCd <= 0 && !hud.ultActive;
       const ultOk = ultReady && d <= prof.ult.range && (sight || prof.ult.lead);
       s.ultWish = ultOk ? s.ultWish + THINK : 0;
-      if (ultOk && s.ultWish >= 0.3) {
-        const t = typeof prof.ult.lead === 'function' ? prof.ult.lead(d) : 0;
+      if (ultOk && s.ultWish >= sk.ultDelay) {
+        const t = typeof prof.ult.lead === 'function' ? prof.ult.lead(d) * sk.lead : 0;
         cmd.ult = leadPoint(enemy, t);
         s.ultWish = 0;
         stats.ults += 1;
@@ -306,10 +316,10 @@ export function createBot(me, opts = {}) {
 
       // атака: только если достанет и путь чист — промах сбивает серию
       if (!hud.attackLocked && d <= prof.range) {
-        const t = prof.projectileSpeed ? d / prof.projectileSpeed : 0;
+        const t = prof.projectileSpeed ? (d / prof.projectileSpeed) * sk.lead : 0;
         const p = leadPoint(enemy, t);
         if (prof.melee || lineClear(me.pos.x, me.pos.z, p.x, p.z)) {
-          const a = Math.atan2(p.x - me.pos.x, p.z - me.pos.z) + (Math.random() * 2 - 1) * AIM_ERROR;
+          const a = Math.atan2(p.x - me.pos.x, p.z - me.pos.z) + (Math.random() * 2 - 1) * sk.aimError;
           cmd.attack = { x: Math.sin(a), z: Math.cos(a) };
           stats.attacks += 1;
           if (hud.combo >= 2) stats.specials += 1;

@@ -19,8 +19,8 @@ export default {
   icon: '⚔️',
   map: 'road',
 
-  setup(match, { heroId, botHeroId, playerName }) {
-    const [botName] = botNames(1);
+  setup(match, { heroId, botHeroId, playerName, botNames: preferred }) {
+    const [botName] = botNames(1, preferred);
     match.addHero(heroId, {
       name: playerName ?? heroById(heroId).name, team: 'blue', control: 'local', side: 'self',
       spawn: { x: 0, z: ARENA.halfL - 3, facing: Math.PI },

@@ -29,8 +29,8 @@ export default {
   icon: '🍾',
   map: 'road',
 
-  setup(match, { heroId, playerName }) {
-    const names = botNames(3);
+  setup(match, { heroId, playerName, botNames: preferred }) {
+    const names = botNames(3, preferred);
     const south = (x) => ({ x, z: ARENA.halfL - 4, facing: Math.PI });
     const north = (x) => ({ x, z: -ARENA.halfL + 4, facing: 0 });
 

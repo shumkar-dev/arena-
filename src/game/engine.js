@@ -14,7 +14,8 @@ import { sound } from './sound.js';
 // Сам бой считает match.js, правила — режим (src/modes), бойцами управляют
 // контроллеры (controllers.js). React-интерфейс пишет в input и читает onHud.
 //
-// options: { modeId, heroId, botHeroId, playerName, autoplay, fast }
+// options: { modeId, heroId, botHeroId, playerName, botNames, botOptions, autoplay, fast, quality }
+//   botNames   — имена ботов (соперники из рейтинга), botOptions — { skill } мастерство ботов
 //   autoplay — локальным бойцом тоже управляет бот (автотесты, прогон баланса)
 //   fast     — шагов симуляции на кадр (ускоренная прокрутка для автотестов)
 //   quality  — 'high' (тени, чёткость) или 'low' (для слабых телефонов)
@@ -73,7 +74,7 @@ export function createGame(mount, input, onHud, options = {}) {
 
   // ---- матч и контроллеры ----
   const match = createMatch({ scene, fx, mode, options });
-  mode.setup(match, { heroId: options.heroId, botHeroId: options.botHeroId, playerName: options.playerName });
+  mode.setup(match, { heroId: options.heroId, botHeroId: options.botHeroId, playerName: options.playerName, botNames: options.botNames });
 
   const player = match.fighters.find((f) => f.control === 'local') ?? match.fighters[0];
   const controllers = new Map();
@@ -185,11 +186,29 @@ export function createGame(mount, input, onHud, options = {}) {
           // первое место по убийствам среди героев (для награды в «каждый сам за себя»)
           topKills: player.kills > 0 && match.fighters.filter((f) => f.kit && f !== player).every((f) => f.kills <= player.kills),
           reason: res.reason ?? '',
+          participants: participants(res),
         },
       };
       const key = JSON.stringify(hud);
       if (key !== lastHud) { lastHud = key; onHud?.(hud); }
     }
+  };
+
+  // все герои матча с их итогом — по нему рейтинг раздаёт уток и ботам
+  const participants = (res) => {
+    const heroes = match.fighters.filter((f) => f.kit);
+    const placeOf = new Map((res.places ?? []).map((p) => [p.f, p.place]));
+    // кто ещё не выбыл, когда матч кончился (ты выбыл раньше) — занимают свободные места по здоровью
+    const free = heroes.map((_, i) => i + 1).filter((p) => ![...placeOf.values()].includes(p));
+    heroes.filter((f) => !placeOf.has(f)).sort((a, b) => b.hp - a.hp).forEach((f, i) => placeOf.set(f, free[i] ?? heroes.length));
+    return heroes.map((f) => ({
+      name: f.name,
+      isPlayer: f === player,
+      isBot: f.control === 'bot',
+      win: res.winners.includes(f.team),
+      place: placeOf.get(f),
+      topKills: f.kills > 0 && heroes.every((o) => o === f || o.kills <= f.kills),
+    }));
   };
 
   const loop = () => {
