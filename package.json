@@ -7,7 +7,9 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
-    "balance": "node scripts/balance.mjs"
+    "balance": "node scripts/balance.mjs",
+    "build:server": "vite build --config server/vite.config.js",
+    "server": "npm run build:server && node server/dist/index.js"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.1",
-    "vite": "^8.3.1"
+    "vite": "^8.3.1",
+    "ws": "^8.18.0"
   }
 }

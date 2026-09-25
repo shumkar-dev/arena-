@@ -1,0 +1,13 @@
+{
+  "name": "vsadniki-arena-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Игровой сервер «Всадников Арены»: собирается из корня репозитория (npm run build:server)",
+  "scripts": {
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

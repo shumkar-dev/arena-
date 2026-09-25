@@ -37,6 +37,7 @@ export default function MainMenu({ prefs, onPlay, go, rankBadge }) {
           <span className="mode-card-change">Сменить ▸</span>
         </button>
         <button className="bs-btn bs-btn-gold play-btn" onClick={onPlay}>Играть</button>
+        <button className="bs-btn friend-btn" onClick={() => go('friend')}>👥 <span className="fb-long">Играть с другом</span><span className="fb-short">С другом</span></button>
       </div>
     </div>
   );

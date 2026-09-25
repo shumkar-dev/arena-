@@ -491,3 +491,23 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 .modal-box { width: min(460px, 100%); padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; }
 .modal-title { margin: 0; font-size: 28px; }
 .modal-hint { margin: 0; font-size: 14px; color: #e8cfc6; }
+
+/* ---- игра с другом ---- */
+.friend-btn { font-size: clamp(12px, 2.1vw, 16px); padding: 8px 6px; margin-top: 8px; width: 100%; white-space: nowrap; }
+.menu-wide { white-space: nowrap; font-size: clamp(14px, 2.5vw, 19px); }
+.play-btn { font-size: clamp(24px, 4.6vw, 34px); }
+.friend { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 0; }
+.friend-hero { font-size: 15px; color: #e8cfc6; }
+.friend-choose { display: flex; gap: 14px; }
+.friend-card { width: 230px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 12px; text-align: center; }
+.friend-icon { font-size: 38px; }
+.friend-box { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 26px; text-align: center; font-size: 18px; }
+.friend-label { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: #e8cfc6; }
+.friend-code { font-size: 64px; font-weight: 600; letter-spacing: 0.18em; color: var(--gold); line-height: 1; text-shadow: 0 4px 0 #1a0306; user-select: text; -webkit-user-select: text; }
+.friend-wait { font-size: 15px; max-width: 360px; }
+.friend-input { width: 170px; font-size: 34px; text-align: center; letter-spacing: 0.25em; text-transform: uppercase; }
+.friend-error { color: #ffb0a8; font-size: 15px; font-weight: 600; text-align: center; }
+.net-ping { position: absolute; top: max(6px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); margin-top: 44px; font-size: 12px; opacity: 0.75; pointer-events: none; text-shadow: 0 1px 0 #000; }
+.btn-big:disabled { opacity: 0.7; }
+.fb-short { display: none; }
+@media (max-width: 760px) { .fb-long { display: none; } .fb-short { display: inline; } .friend-btn { font-size: 16px; } }
