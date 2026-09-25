@@ -1,31 +1,34 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { createGame } from './game/engine.js';
-import { heroById, HEROES } from './heroes/index.js';
-import Joystick from './ui/Joystick.jsx';
-import ActionButtons from './ui/ActionButtons.jsx';
+import React, { useCallback, useMemo, useState } from 'react';
+import { HEROES } from './heroes/index.js';
+import { MODES } from './modes/index.js';
+import Arena from './ui/Arena.jsx';
 import HeroSelect from './ui/HeroSelect.jsx';
 import { sound } from './game/sound.js';
 
-// клавиатура — только для отладки на компьютере; H — ударить себя (проверка смерти)
-const KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
-
 const params = new URLSearchParams(location.search);
 // Отладка и автотесты:
-//   ?hero=izyum — сразу на арену этим героем;   ?bot=shaba — каким героем играет бот
-//   ?dummy — вместо бота манекен;               ?autoplay — за игрока тоже играет бот
-//   ?fast=4 — ускорить симуляцию в 4 раза (прогон боёв бот против бота)
-const known = (id) => (HEROES.some((h) => h.id === id) ? id : null);
-const startHero = known(params.get('hero'));
-const gameOptions = {
-  botHeroId: known(params.get('bot')),
-  dummy: params.has('dummy'),
-  autoplay: params.has('autoplay'),
-  fast: Math.max(1, Math.min(20, Number(params.get('fast')) || 1)),
-};
+//   ?mode=duel — режим (duel, training…);    ?hero=izyum — сразу на арену этим героем
+//   ?bot=shaba — каким героем играет бот;    ?dummy — то же, что ?mode=training
+//   ?autoplay — за игрока тоже играет бот;   ?fast=4 — ускорить симуляцию в 4 раза
+//   ?debug — матч в консоли: window.__game
+const knownHero = (id) => (HEROES.some((h) => h.id === id) ? id : null);
+const knownMode = (id) => (MODES.some((m) => m.id === id) ? id : null);
+const startHero = knownHero(params.get('hero'));
+const startMode = params.has('dummy') ? 'training' : knownMode(params.get('mode')) ?? MODES[0].id;
+const debug = params.has('debug');
 
 export default function App() {
+  const [modeId, setModeId] = useState(startMode);
   const [heroId, setHeroId] = useState(startHero);
+  const [inArena, setInArena] = useState(!!startHero);
+  const [round, setRound] = useState(0);        // «Ещё раз» — новый матч с теми же героем и режимом
   const [muted, setMuted] = useState(sound.muted);
+
+  const options = useMemo(() => ({
+    botHeroId: knownHero(params.get('bot')),
+    autoplay: params.has('autoplay'),
+    fast: Math.max(1, Math.min(20, Number(params.get('fast')) || 1)),
+  }), []);
 
   // по первому касанию: разрешить звук, а на телефоне — полный экран и горизонталь
   const onFirstTouch = () => {
@@ -37,11 +40,15 @@ export default function App() {
       .catch(() => {});
   };
 
+  const start = (id) => { setHeroId(id); setInArena(true); setRound((r) => r + 1); };
+  const again = useCallback(() => setRound((r) => r + 1), []);
+  const exit = useCallback(() => setInArena(false), []);
+
   return (
     <div className="game" onPointerDownCapture={onFirstTouch}>
-      {heroId
-        ? <Arena key={heroId} heroId={heroId} onExit={() => setHeroId(null)} />
-        : <HeroSelect onPick={setHeroId} />}
+      {inArena
+        ? <Arena key={`${modeId}-${heroId}-${round}`} modeId={modeId} heroId={heroId} options={options} debug={debug} onExit={exit} onAgain={again} />
+        : <HeroSelect modeId={modeId} onMode={setModeId} onPick={start} />}
       <button
         className="sound-toggle"
         onClick={() => { sound.setMuted(!muted); setMuted(!muted); }}
@@ -54,68 +61,5 @@ export default function App() {
         <p>Поверни телефон горизонтально</p>
       </div>
     </div>
-  );
-}
-
-function Arena({ heroId, onExit }) {
-  const hero = heroById(heroId);
-  const mountRef = useRef(null);
-  const input = useRef({ moveX: 0, moveY: 0, attack: false, ult: false, ultAim: null, ultFire: null }).current;
-  const [hud, setHud] = useState({ ultCd: 0, ultFrac: 0, ultActive: false, combo: 0, special: false, ultAim: 'tap', dead: false, respawnIn: 0 });
-
-  useEffect(() => {
-    const game = createGame(mountRef.current, input, setHud, { heroId, ...gameOptions });
-    // ?debug — доступ к бойцам из консоли и автотестов
-    if (params.has('debug')) window.__game = game;
-
-    const held = new Set();
-    const sync = () => {
-      let x = 0, y = 0;
-      for (const k of held) { x += KEYS[k][0]; y += KEYS[k][1]; }
-      input.moveX = x; input.moveY = y;
-    };
-    const kd = (e) => {
-      if (KEYS[e.code]) { held.add(e.code); sync(); }
-      else if (e.code === 'KeyJ' || e.code === 'Space') input.attack = true;
-      else if (e.code === 'KeyK') input.ult = true;
-      else if (e.code === 'KeyH') input.selfHit = true;   // отладка: ударить себя на 1000
-    };
-    const ku = (e) => { if (held.delete(e.code)) sync(); };
-    window.addEventListener('keydown', kd);
-    window.addEventListener('keyup', ku);
-
-    return () => {
-      game.dispose();
-      if (window.__game === game) delete window.__game;
-      window.removeEventListener('keydown', kd);
-      window.removeEventListener('keyup', ku);
-    };
-  }, [input, heroId]);
-
-  return (
-    <>
-      <div ref={mountRef} className="viewport" />
-      <div className="hud-top">
-        <button className="hero-tag" onClick={onExit} aria-label="Сменить героя">
-          ◀ {hero.name.toUpperCase()}
-        </button>
-      </div>
-      {hud.score && (
-        <div className="score">
-          <span className="score-me">{hud.score.me}</span>
-          <span className="score-sep">:</span>
-          <span className="score-rival">{hud.score.rival}</span>
-          <span className="score-name">{hud.score.rivalName}{hud.score.rivalHero && ` · ${hud.score.rivalHero}`}</span>
-        </div>
-      )}
-      <Joystick input={input} />
-      <ActionButtons input={input} hud={hud} icons={hero.icons} />
-      {hud.dead && (
-        <div className="death">
-          <div className="death-title">Вне игры</div>
-          <div className="death-timer">{hero.name}: возрождение через {hud.respawnIn}</div>
-        </div>
-      )}
-    </>
   );
 }

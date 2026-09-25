@@ -22,7 +22,7 @@ export function createOverlay(mount) {
     let b = bars.get(f.id);
     if (!b) {
       const el = document.createElement('div');
-      el.className = `hpbar ${f.team === 'blue' ? 'ally' : 'enemy'}`;
+      el.className = `hpbar ${f.side === 'self' || f.side === 'ally' ? 'ally' : f.side}`;
       el.innerHTML = `<div class="hpbar-name"><span class="hpbar-status"></span><span class="hpbar-label"></span></div><div class="hpbar-track"><div class="hpbar-fill"></div><div class="hpbar-text"></div></div>`;
       el.querySelector('.hpbar-label').textContent = f.name;
       root.appendChild(el);
