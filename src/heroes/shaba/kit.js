@@ -174,7 +174,7 @@ export function createShabaKit(me) {
         me.pos.x += Math.sin(me.facing) * 4 * dt;
         me.pos.z += Math.cos(me.facing) * 4 * dt;
         const tgt = findTarget(world, T.grabReach);
-        if (tgt && !tgt.grabbedBy) {
+        if (tgt && !tgt.grabbedBy && !tgt.isObjective) {   // бутылку не схватишь
           s.victim = tgt;
           tgt.grabbedBy = me;
           world.sfx('grab');

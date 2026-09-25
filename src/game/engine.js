@@ -86,7 +86,8 @@ export function createGame(mount, input, onHud, options = {}) {
       if (e.type === 'damage') {
         overlay.spawnNumber(e.target, e.amount, e.target === player ? 'taken' : e.kind);
         if (e.target === player) sound.play('hurt');
-      } else if (e.type === 'say') overlay.spawnNumber(e.f, e.text, 'text');
+      } else if (e.type === 'heal') overlay.spawnNumber(e.target, `+${e.amount}`, 'heal');
+      else if (e.type === 'say') overlay.spawnNumber(e.f, e.text, 'text');
       else if (e.type === 'sfx') sound.play(e.name, e.opts);
       else if (e.type === 'death') sound.play('death');
       else if (e.type === 'respawn') sound.play('respawn');
@@ -122,6 +123,7 @@ export function createGame(mount, input, onHud, options = {}) {
     if (!frozen) match.step(dt, controllers);
     handleEvents();
     fx.update(dt);
+    match.world.pickups.animate(t);
 
     // --- модели ---
     for (const f of match.fighters) {
@@ -195,7 +197,7 @@ export function createGame(mount, input, onHud, options = {}) {
       match.dispose();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) o.material.dispose();
+        for (const m of [].concat(o.material ?? [])) m.dispose();
       });
       renderer.dispose();
       dom.remove();
