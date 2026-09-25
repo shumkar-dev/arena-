@@ -4,6 +4,8 @@ import { mapById } from '../maps/index.js';
 import { createMatch } from './match.js';
 import { modeById } from '../modes/index.js';
 import { createLocalController, createBotController, ultPoint } from './controllers.js';
+import { createOnlineMode } from '../net/protocol.js';
+import { createNetSync } from '../net/sync.js';
 import { createOverlay } from './overlay.js';
 import { createEffects } from './effects.js';
 import { createAim } from './aim.js';
@@ -19,13 +21,19 @@ import { sound } from './sound.js';
 //   autoplay — локальным бойцом тоже управляет бот (автотесты, прогон баланса)
 //   fast     — шагов симуляции на кадр (ускоренная прокрутка для автотестов)
 //   quality  — 'high' (тени, чёткость) или 'low' (для слабых телефонов)
+//   net      — сетевой матч: { conn, you, players } (src/net); бой считает сервер
 // ============================================================
 
 const CAM_OFFSET = new THREE.Vector3(0, 14.5, 9.5);
 const END_DELAY = 1.4;   // сколько секунд после победы ещё видно арену, прежде чем покажется итог
 
 export function createGame(mount, input, onHud, options = {}) {
-  const mode = modeById(options.modeId);
+  const net = options.net ?? null;
+  const mode = net ? createOnlineMode({ players: net.players, you: net.you }) : modeById(options.modeId);
+  // игрок на севере (сетевой матч) смотрит на арену с другой стороны — «вверх» у всех к врагу
+  const flip = !!net && net.you === 1;
+  const fs = flip ? -1 : 1;
+  const camOffset = CAM_OFFSET.clone().setZ(CAM_OFFSET.z * fs);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x9fb4c8);
@@ -77,12 +85,14 @@ export function createGame(mount, input, onHud, options = {}) {
   mode.setup(match, { heroId: options.heroId, botHeroId: options.botHeroId, playerName: options.playerName, botNames: options.botNames });
 
   const player = match.fighters.find((f) => f.control === 'local') ?? match.fighters[0];
+  const sync = net ? createNetSync({ match, player, net: net.conn }) : null;
   const controllers = new Map();
   for (const f of match.fighters) {
     if (!f.kit) continue;
-    if (f.control === 'local' && !options.autoplay) controllers.set(f, createLocalController(f, input));
+    if (f.control === 'local' && sync) controllers.set(f, sync.wrapLocal(createLocalController(f, input, { flip })));
+    else if (f.control === 'local' && !options.autoplay) controllers.set(f, createLocalController(f, input));
     else if (f.control === 'local' || f.control === 'bot') controllers.set(f, createBotController(f, options.botOptions));
-    // 'remote' — сюда встанет контроллер сетевого игрока
+    else if (f.control === 'remote' && sync) controllers.set(f, sync.remotes.get(f));
   }
 
   // ---- события матча → экран и звук ----
@@ -106,12 +116,14 @@ export function createGame(mount, input, onHud, options = {}) {
     // после смерти без возрождения камера следит за тем, кто ещё жив
     const follow = player.alive || player.respawns ? player : match.fighters.find((f) => f.kit && f.alive) ?? player;
     const tx = follow.pos.x * 0.55;
-    const tz = Math.max(-ARENA.halfL + 6, Math.min(ARENA.halfL - 4, follow.pos.z));
+    const tz = flip
+      ? Math.max(-ARENA.halfL + 4, Math.min(ARENA.halfL - 6, follow.pos.z))
+      : Math.max(-ARENA.halfL + 6, Math.min(ARENA.halfL - 4, follow.pos.z));
     const k = dt < 0 ? 1 : 1 - Math.exp(-dt * 6);
     camTarget.x += (tx - camTarget.x) * k;
     camTarget.z += (tz - camTarget.z) * k;
-    camera.position.copy(camTarget).add(CAM_OFFSET);
-    camera.lookAt(camTarget.x, 0, camTarget.z - 1.5);
+    camera.position.copy(camTarget).add(camOffset);
+    camera.lookAt(camTarget.x, 0, camTarget.z - 1.5 * fs);
     sun.position.set(camTarget.x + 8, 20, camTarget.z + 6);
     sun.target.position.set(camTarget.x, 0, camTarget.z);
   };
@@ -121,11 +133,12 @@ export function createGame(mount, input, onHud, options = {}) {
   let raf = 0, hudAcc = 0, lastHud = '';
 
   const step = (dt, t) => {
-    if (input.selfHit) { input.selfHit = false; match.world.damage(player, 1000, null, 'taken'); }
+    if (input.selfHit && !net) { input.selfHit = false; match.world.damage(player, 1000, null, 'taken'); }
 
     // после конца матча ещё немного показываем арену, потом замираем
     const frozen = match.result && match.world.time - match.result.at > END_DELAY;
     if (!frozen) match.step(dt, controllers);
+    sync?.afterStep(dt);
     handleEvents();
     fx.update(dt);
     match.world.pickups.animate(t);
@@ -149,7 +162,7 @@ export function createGame(mount, input, onHud, options = {}) {
     else aim.hideArea();
 
     if (kit.ultAim === 'drag' && input.ultAim?.active && player.alive) {
-      const p = ultPoint(player, match.world, input.ultAim.dx, input.ultAim.dy);
+      const p = ultPoint(player, match.world, input.ultAim.dx * fs, input.ultAim.dy * fs);
       aim.showUlt(kit.ultShape, player.pos, Math.atan2(p.x - player.pos.x, p.z - player.pos.z), p);
     } else aim.hideUlt();
 
@@ -177,6 +190,7 @@ export function createGame(mount, input, onHud, options = {}) {
         dead: !player.alive,
         respawnIn: Number.isFinite(player.respawnIn) ? Math.ceil(player.respawnIn) : null,
         mode: mode.hud?.(match, player) ?? null,
+        ping: net ? net.conn.ping : null,
         result: res && {
           modeId: mode.id,
           win: res.winners.includes(player.team),
@@ -227,6 +241,7 @@ export function createGame(mount, input, onHud, options = {}) {
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      sync?.dispose();
       overlay.dispose();
       sound.stopAll();
       match.dispose();
