@@ -5,7 +5,8 @@ import { clampDucks } from './ranks.js';
 // РЕЙТИНГ — где лежат утки.
 // На устройстве (localStorage): id игрока, его утки, утки знакомых ботов и
 // очередь ещё не отправленных изменений. Если заданы ключи Supabase
-// (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY), изменения уходят в общую таблицу
+// (VITE_SUPABASE_URL и ключ VITE_SUPABASE_ANON_KEY — publishable sb_publishable_… или старый anon),
+// изменения уходят в общую таблицу
 // arena_rating (схема — docs/supabase.sql), оттуда же читается таблица рейтинга.
 // Без сети и без ключей всё работает на устройстве, очередь отправится позже.
 //
@@ -14,9 +15,14 @@ import { clampDucks } from './ranks.js';
 // ============================================================
 
 const KEY = 'arena.rating';
-const URL_ = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '');
-const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-export const online = !!(URL_ && ANON);
+// адрес проекта: https://<id>.supabase.co — лишний хвост /rest/v1/ (его часто копируют из
+// настроек API) убираем, иначе запросы уйдут на /rest/v1/rest/v1/… и получат 404
+const URL_ = (import.meta.env.VITE_SUPABASE_URL ?? '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+const KEY_ = (import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
+export const online = !!(URL_ && KEY_);
+
+// последняя ошибка связи с таблицей — показывается на экране рейтинга
+export let lastError = '';
 
 export const botId = (name) => `bot:${name}`;
 
@@ -80,10 +86,37 @@ export function applyMatch(entries, playerName) {
 
 // ---------- Supabase (REST, без библиотек) ----------
 
-const headers = () => ({ apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json' });
+// Новый ключ (sb_publishable_…) — не JWT: его передают только в apikey, а заголовок
+// Authorization с ним Supabase отклоняет. Старый anon-ключ (JWT, eyJ…) — в оба заголовка.
+const headers = () => ({
+  apikey: KEY_,
+  ...(KEY_.startsWith('eyJ') ? { Authorization: `Bearer ${KEY_}` } : {}),
+  'Content-Type': 'application/json',
+});
+
+const fail = async (res) => {
+  let msg = '';
+  try { const j = await res.json(); msg = j.message || j.msg || j.error || ''; } catch { /* не JSON */ }
+  lastError = `Supabase ${res.status}${msg ? `: ${msg}` : ''}`;
+  console.warn('[рейтинг]', lastError);
+};
+
+// Раз за запуск убедиться, что строка игрока есть в общей таблице (и имя свежее):
+// «пустое» изменение на 0 уток с текущим числом как стартовым. Так в таблицу попадают
+// и утки, набранные, пока связи с таблицей не было.
+let synced = false;
+export function syncPlayer(name) {
+  if (!online || synced) return flush();
+  synced = true;
+  if (!state.pending.some((q) => q.id === state.id)) {
+    state.pending.push({ id: state.id, name, isBot: false, base: Math.min(state.ducks, 3000), delta: 0 });
+    save();
+  }
+  return flush();
+}
 
 let flushing = null;
-/** Отправить накопленные изменения. Ошибка сети — не страшно, попробуем в следующий раз. */
+/** Отправить накопленные изменения. Ошибка сети или настройки — не страшно, попробуем в следующий раз. */
 export function flush() {
   if (!online || flushing || !state.pending.length) return flushing ?? Promise.resolve();
   flushing = (async () => {
@@ -96,10 +129,13 @@ export function flush() {
           body: JSON.stringify({ p_id: p.id, p_name: p.name, p_is_bot: p.isBot, p_base: p.base, p_delta: p.delta }),
         });
         if (!res.ok) {
-          // сервер отказал (неверные данные) — такое изменение выбрасываем, чтобы не застрять
-          if (res.status >= 400 && res.status < 500) { state.pending.shift(); save(); continue; }
+          await fail(res);
+          // 400 — функция отвергла сами данные: такое изменение выбрасываем, чтобы не застрять.
+          // 401/403/404 и прочее — ошибка настройки или сервера: очередь храним до исправления.
+          if (res.status === 400) { state.pending.shift(); save(); continue; }
           break;
         }
+        lastError = '';
         const ducks = Number(await res.json());
         state.pending.shift();
         // сервер знает точное число — берём его (для ботов его меняют и другие игроки)
@@ -108,7 +144,7 @@ export function flush() {
         }
         save();
       }
-    } catch { /* нет сети */ }
+    } catch { lastError = 'Нет связи с Supabase'; }
     flushing = null;
   })();
   return flushing;
@@ -127,7 +163,7 @@ export async function fetchLeaderboard(playerName, limit = 100) {
   let rows = null;
   if (online) {
     try {
-      await flush();
+      await syncPlayer(playerName);
       const res = await fetch(`${URL_}/rest/v1/arena_rating?select=id,name,ducks,is_bot&order=ducks.desc&limit=${limit}`, { headers: headers() });
       if (res.ok) {
         const data = await res.json();
@@ -140,8 +176,8 @@ export async function fetchLeaderboard(playerName, limit = 100) {
         save();
         const have = new Set(rows.map((r) => r.id));
         for (const r of local()) if (!have.has(r.id)) rows.push(r);
-      }
-    } catch { /* нет сети — покажем с устройства */ }
+      } else await fail(res);
+    } catch { lastError = 'Нет связи с Supabase'; }
   }
   const ok = !!rows;
   rows = (rows ?? local()).map((r) => (r.id === state.id ? { ...r, name: playerName, ducks: state.ducks } : r));

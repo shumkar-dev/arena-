@@ -3,7 +3,7 @@ import TopBar from './TopBar.jsx';
 import ModelStage from './ModelStage.jsx';
 import { createDuck } from '../../characters/duck.js';
 import { RANKS, rankOf } from '../../rating/ranks.js';
-import { fetchLeaderboard, online } from '../../rating/store.js';
+import { fetchLeaderboard, online, lastError } from '../../rating/store.js';
 import DuckIcon from '../DuckIcon.jsx';
 
 // Рейтинг: твоя утка и звание, лестница званий и общая таблица (игроки и боты).
@@ -23,7 +23,10 @@ export default function Rating({ ducks, playerName, onBack, onDucks }) {
   }, [playerName, onDucks]);
 
   const progress = rank.next ? (ducks - rank.from) / (rank.next.from - rank.from) : 1;
-  const status = !online ? 'Таблица на этом устройстве' : board && !board.online ? 'Нет связи — таблица с устройства' : 'Общая таблица';
+  const status = !online ? 'Таблица на этом устройстве'
+    : board && !board.online ? `Нет связи — таблица с устройства${lastError ? ` (${lastError})` : ''}`
+    : board && lastError ? `Общая таблица · ошибка записи: ${lastError}`
+    : 'Общая таблица';
 
   return (
     <div className="menu">

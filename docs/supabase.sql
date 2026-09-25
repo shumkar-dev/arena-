@@ -1,6 +1,8 @@
 -- ============================================================
 -- Таблица рейтинга «Всадников Арены» для Supabase.
--- Выполнить один раз: Supabase → SQL Editor → вставить → Run.
+-- Выполнить: Supabase → SQL Editor → вставить → Run. Можно запускать повторно —
+-- данные в таблице не трогает, только добавляет недостающее (права, функцию).
+-- Ключ игры — publishable (sb_publishable_…) или старый anon: оба работают от роли anon.
 --
 -- Игра только читает таблицу и меняет уток через функцию arena_add_ducks:
 -- напрямую писать в таблицу нельзя, а за один матч можно получить или
@@ -19,6 +21,12 @@ create table if not exists public.arena_rating (
 create index if not exists arena_rating_ducks on public.arena_rating (ducks desc);
 
 alter table public.arena_rating enable row level security;
+
+-- читать таблицу через API могут все (в новых проектах Supabase права на новые
+-- таблицы роли anon выдаются не всегда — выдаём явно); писать напрямую нельзя
+grant usage on schema public to anon, authenticated;
+grant select on public.arena_rating to anon, authenticated;
+revoke insert, update, delete on public.arena_rating from anon, authenticated;
 
 drop policy if exists "arena_rating read" on public.arena_rating;
 create policy "arena_rating read" on public.arena_rating for select using (true);
@@ -46,3 +54,9 @@ end $$;
 
 revoke all on function public.arena_add_ducks(text, text, boolean, integer, integer) from public;
 grant execute on function public.arena_add_ducks(text, text, boolean, integer, integer) to anon, authenticated;
+
+-- чтобы API сразу увидел новую функцию и права
+notify pgrst, 'reload schema';
+
+-- Проверка (в SQL Editor): после матча в игре здесь появятся строки игроков и ботов
+-- select * from public.arena_rating order by ducks desc;
