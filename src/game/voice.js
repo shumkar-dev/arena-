@@ -65,6 +65,7 @@ export const voice = {
       src.buffer = buf;
       src.connect(bus);
       src.start();
+      sound.duckMusic(buf.duration);   // музыку на время реплики — тише
       current = { src, pr, end: ctx.currentTime + buf.duration };
     });
   },

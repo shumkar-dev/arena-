@@ -29,6 +29,7 @@ let sfxVol = null;      // громкость звуков — после ком
 // шкале половина ползунка — всего −6 дБ, почти незаметно на динамике телефона.
 // Квадрат даёт ровный ход: 0,5 → −12 дБ, 0,25 → −24 дБ, 0 — тишина.
 const curve = (v) => v * v;
+const busGain = (name) => curve(busVolume[name]) * (name === 'music' ? MUSIC_TRIM : 1);
 
 // сменить усиление сразу (без хвоста от прошлых плавных изменений)
 function setGain(node, value) {
@@ -39,7 +40,14 @@ function setGain(node, value) {
   node.gain.linearRampToValueAtTime(value, now + 0.03);
 }
 const busVolume = { voice: 0.9, music: 0.5 };
-const unlockers = [];   // кому сообщить, что звук разрешён (музыке)
+const listeners = [];   // кому сообщить: звук разрешён, выключен/включён, сменилась громкость (музыке)
+const notify = () => { for (const fn of listeners) fn(); };
+
+// Музыка — фон: при том же положении ползунка она на ~9 дБ (в ~3 раза по слуху) тише
+// голосов и звуков. Пока звучит реплика героя, музыка приглушается ещё (MUSIC_DUCK).
+const MUSIC_TRIM = 0.35;
+const MUSIC_DUCK = 0.4;
+let musicDuck = null;   // гейн приглушения музыки под реплики
 try { muted = localStorage.getItem(STORE_KEY) === '1'; } catch { /* приватный режим — звук включён */ }
 
 const lastPlayed = new Map();   // имя → время, чтобы одинаковые звуки не сливались в кашу
@@ -57,9 +65,11 @@ function ensure() {
   mainOut.connect(ctx.destination);
   for (const name of ['voice', 'music']) {
     buses[name] = ctx.createGain();
-    buses[name].gain.value = curve(busVolume[name]);
-    buses[name].connect(mainOut);
+    buses[name].gain.value = busGain(name);
   }
+  buses.voice.connect(mainOut);
+  musicDuck = ctx.createGain();
+  buses.music.connect(musicDuck).connect(mainOut);
 
   const out = ctx.createGain();
   out.gain.value = MASTER;
@@ -391,20 +401,39 @@ export const sound = {
   // вызвать по первому касанию — браузер разрешит звук
   unlock() {
     if (!ensure()) return;
-    const done = () => { for (const fn of unlockers) fn(); };
-    if (ctx.state === 'suspended') ctx.resume().then(done, () => {});
-    else done();
+    if (ctx.state === 'suspended') ctx.resume().then(notify, () => {});
+    else notify();
   },
   /** Сообщить, когда браузер разрешит звук (после касания). */
-  onUnlock(fn) { unlockers.push(fn); },
+  onUnlock(fn) { listeners.push(fn); },
+  /** Сообщать о переменах: звук разрешён, выключен или включён, сменилась громкость. */
+  onChange(fn) { listeners.push(fn); },
   /** Контекст Web Audio, если звук уже разрешён, иначе null. */
   context() { return ctx && ctx.state === 'running' ? ctx : null; },
   /** Вход канала голосов или музыки. */
   bus(name) { return buses[name] ?? null; },
+  /** Положение ползунка канала 0..1 (0 — музыка останавливается). */
+  busVolume(name) { return busVolume[name]; },
   setBusVolume(name, v) {
+    const was = busVolume[name];
     busVolume[name] = Math.max(0, Math.min(1, v));
-    setGain(buses[name], curve(busVolume[name]));
+    setGain(buses[name], busGain(name));
+    if ((was === 0) !== (busVolume[name] === 0)) notify();   // музыка на нуле — остановить, с нуля — запустить
   },
+  /** Приглушить музыку на dur секунд — под реплику героя, чтобы её было хорошо слышно. */
+  duckMusic(dur) {
+    if (!musicDuck) return;
+    const now = ctx.currentTime;
+    const g = musicDuck.gain;
+    const until = now + dur;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(MUSIC_DUCK, now + 0.08);
+    g.setValueAtTime(MUSIC_DUCK, Math.max(now + 0.08, until));
+    g.linearRampToValueAtTime(1, Math.max(now + 0.08, until) + 0.5);
+  },
+  /** Выход канала после громкости — для замеров уровня (отладка, автотесты). */
+  meterNode(name) { return name === 'sfx' ? sfxVol : name === 'music' ? musicDuck : buses[name] ?? null; },
   play(name, opts) {
     if (muted || !ctx || ctx.state !== 'running' || !SOUNDS[name]) return;
     const now = ctx.currentTime;
@@ -419,7 +448,7 @@ export const sound = {
     try { localStorage.setItem(STORE_KEY, v ? '1' : '0'); } catch { /* не сохранилось — не страшно */ }
     if (v) sound.stopAll();
     setGain(mainOut, v ? 0 : 1);
-    for (const fn of unlockers) fn();
+    notify();
   },
   get volume() { return volume; },
   setVolume(v) {

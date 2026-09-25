@@ -6,6 +6,7 @@ import { sound } from './sound.js';
 // Идёт через Web Audio (канал «музыка» в sound.js): так громкость меняется
 // и на iPhone, где у <audio> громкость не регулируется.
 // Начинает играть после первого касания (раньше браузер не разрешит).
+// Громкость — канал «музыка» (тише голосов и звуков, см. sound.js); на нуле — стоп.
 // ============================================================
 
 const FILES = { menu: 'menu.mp3', battle: 'battle.mp3' };
@@ -31,7 +32,7 @@ function track(ctx, name) {
 function apply() {
   const ctx = sound.context();
   if (!ctx || !sound.bus('music')) return;
-  const silent = sound.muted || document.hidden;
+  const silent = sound.muted || document.hidden || sound.busVolume('music') === 0;
   const now = ctx.currentTime;
   for (const name of Object.keys(FILES)) {
     const on = name === wanted && !silent;
@@ -50,7 +51,7 @@ function apply() {
   }
 }
 
-sound.onUnlock(apply);
+sound.onChange(apply);
 document.addEventListener('visibilitychange', apply);
 
 export const music = {
