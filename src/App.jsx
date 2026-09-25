@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createGame } from './game/engine.js';
-import { heroById, HEROES } from './game/heroes.js';
+import { heroById, HEROES } from './heroes/index.js';
 import Joystick from './ui/Joystick.jsx';
 import ActionButtons from './ui/ActionButtons.jsx';
 import HeroSelect from './ui/HeroSelect.jsx';
@@ -10,8 +10,18 @@ import { sound } from './game/sound.js';
 const KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
 
 const params = new URLSearchParams(location.search);
-// ?hero=izyum — сразу на арену (для отладки и автотестов)
-const startHero = HEROES.some((h) => h.id === params.get('hero')) ? params.get('hero') : null;
+// Отладка и автотесты:
+//   ?hero=izyum — сразу на арену этим героем;   ?bot=shaba — каким героем играет бот
+//   ?dummy — вместо бота манекен;               ?autoplay — за игрока тоже играет бот
+//   ?fast=4 — ускорить симуляцию в 4 раза (прогон боёв бот против бота)
+const known = (id) => (HEROES.some((h) => h.id === id) ? id : null);
+const startHero = known(params.get('hero'));
+const gameOptions = {
+  botHeroId: known(params.get('bot')),
+  dummy: params.has('dummy'),
+  autoplay: params.has('autoplay'),
+  fast: Math.max(1, Math.min(20, Number(params.get('fast')) || 1)),
+};
 
 export default function App() {
   const [heroId, setHeroId] = useState(startHero);
@@ -54,7 +64,7 @@ function Arena({ heroId, onExit }) {
   const [hud, setHud] = useState({ ultCd: 0, ultFrac: 0, ultActive: false, combo: 0, special: false, ultAim: 'tap', dead: false, respawnIn: 0 });
 
   useEffect(() => {
-    const game = createGame(mountRef.current, input, setHud, heroId);
+    const game = createGame(mountRef.current, input, setHud, { heroId, ...gameOptions });
     // ?debug — доступ к бойцам из консоли и автотестов
     if (params.has('debug')) window.__game = game;
 
@@ -90,6 +100,14 @@ function Arena({ heroId, onExit }) {
           ◀ {hero.name.toUpperCase()}
         </button>
       </div>
+      {hud.score && (
+        <div className="score">
+          <span className="score-me">{hud.score.me}</span>
+          <span className="score-sep">:</span>
+          <span className="score-rival">{hud.score.rival}</span>
+          <span className="score-name">{hud.score.rivalName}{hud.score.rivalHero && ` · ${hud.score.rivalHero}`}</span>
+        </div>
+      )}
       <Joystick input={input} />
       <ActionButtons input={input} hud={hud} icons={hero.icons} />
       {hud.dead && (

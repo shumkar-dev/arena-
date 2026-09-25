@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // ============================================================
 // БОЕЦ — общее для игрока, манекена и будущих ботов:
 // ХП, получение урона, вспышка и отшатывание, смерть, возрождение.
-// Что и как бьёт — решает набор приёмов персонажа (kits/*).
+// Что и как бьёт — решает набор приёмов героя (src/heroes/<id>/kit.js).
 // ============================================================
 
 export const RESPAWN_TIME = 3;
@@ -66,6 +66,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     if (!f.alive) return 0;
     const dealt = Math.min(f.hp, Math.round(amount));
     f.hp -= dealt;
+    if (from) f.lastHitBy = from;   // кому засчитать, если это добивание
     f.flash = 1;
     f.flinch = 1;
     if (from) {
@@ -94,6 +95,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     f.flinch = 0;
     f.grabbedBy = null;
     f.effects = {};
+    f.lastHitBy = null;
     wrapper.visible = true;
     ring.visible = true;
   };

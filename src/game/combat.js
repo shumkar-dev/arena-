@@ -60,7 +60,8 @@ export function enemiesInRadius(me, world, x, z, r) {
 
 /**
  * Серия атак: нажатие ставится в очередь, пока идёт прошлая атака;
- * каждое попадание продвигает серию, промах и долгая пауза сбрасывают её.
+ * каждое попадание продвигает серию, долгая пауза без атак сбрасывает её
+ * (промах не сбрасывает — иначе против уворачивающегося врага третьей атаки не дождаться).
  * Третья атака (combo === 2) — особая.
  */
 export function createChain({ reset = 2.2, queueTime = 0.35 } = {}) {
@@ -85,7 +86,6 @@ export function createChain({ reset = 2.2, queueTime = 0.35 } = {}) {
     },
     startCooldown(t) { c.cd = t; },
     hit() { c.combo = Math.min(2, c.combo + 1); },
-    miss() { c.combo = 0; },
     // особая атака потрачена
     consume() { c.combo = 0; },
     clear() { c.combo = 0; c.queued = 0; c.idle = 0; },

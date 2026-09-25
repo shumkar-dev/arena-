@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createChain, aimAttack, nearestEnemy, faceTowards, enemiesInRadius, dist2d } from '../combat.js';
+import { createChain, aimAttack, nearestEnemy, faceTowards, enemiesInRadius, dist2d } from '../../game/combat.js';
 
 // ============================================================
 // ПРИЁМЫ ЧЁРНОГО ИЗЮМА
@@ -74,7 +74,6 @@ export function createIzyumKit(me) {
       },
       onEnd(p) {
         if (special) blast(p.x, p.z);
-        else chain.miss();
       },
     });
     if (special) chain.consume();

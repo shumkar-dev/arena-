@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { createBee } from '../characters/gargashmel.js';
 import { pointBlocked } from './arena.js';
 
 // ============================================================
@@ -67,10 +66,10 @@ export function createEffects(scene) {
       add(g, 1.4, (k) => { mat.opacity = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4; });
     },
 
-    // шмель летит дугой из (x0, z0) в (x1, z1) за dur секунд и в конце пикирует в землю
-    beeFlight(x0, z0, x1, z1, dur) {
-      const bee = createBee();
-      bee.root.scale.setScalar(2.2);
+    // летун (модель { root, animate(t) }, например шмель) летит дугой
+    // из (x0, z0) в (x1, z1) за dur секунд и в конце пикирует в землю
+    flight(bee, x0, z0, x1, z1, dur, scale = 2.2) {
+      bee.root.scale.setScalar(scale);
       const yaw = Math.atan2(x1 - x0, z1 - z0);
       add(bee.root, dur, (k, age) => {
         bee.animate(age);

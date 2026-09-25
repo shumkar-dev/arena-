@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mat, box, part, resetRig, poseIdle, poseRun } from './blocks.js';
+import { mat, box, part, resetRig, poseIdle, poseRun } from '../blocks.js';
 
 // ============================================================
 // ГАРГАШМЕЛЬ — игровая модель, ноги-щупальца

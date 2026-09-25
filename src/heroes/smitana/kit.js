@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createChain, aimAttack, enemiesInCone, lineClear } from '../combat.js';
+import { createChain, aimAttack, enemiesInCone, lineClear } from '../../game/combat.js';
 
 // ============================================================
 // ПРИЁМЫ СМИТАНЫ
@@ -79,7 +79,6 @@ export function createSmitanaKit(me) {
       onEnd(p) {
         world.fx.splat(p.x, p.z, 0.5);
         world.sfx('splat');
-        if (!special) chain.miss();
       },
     });
     if (special) chain.consume();
