@@ -48,7 +48,7 @@ export const botDucks = (name) => state.bots[botId(name)] ?? BOT_SEED[botId(name
  */
 export function pickBotNames(n, ducks = state.ducks) {
   const near = [...BOT_NAMES].sort((a, b) => Math.abs(botDucks(a) - ducks) - Math.abs(botDucks(b) - ducks));
-  const pool = near.slice(0, Math.max(n + 4, 8));
+  const pool = near.slice(0, Math.max(n + 2, 4));
   const out = [];
   while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
   return out;
@@ -131,7 +131,9 @@ export async function fetchLeaderboard(playerName, limit = 100) {
       const res = await fetch(`${URL_}/rest/v1/arena_rating?select=id,name,ducks,is_bot&order=ducks.desc&limit=${limit}`, { headers: headers() });
       if (res.ok) {
         const data = await res.json();
-        rows = data.map((r) => ({ id: r.id, name: r.name, ducks: r.ducks, isBot: r.is_bot }));
+        rows = data
+          .map((r) => ({ id: r.id, name: r.name, ducks: r.ducks, isBot: r.is_bot }))
+          .filter((r) => !r.isBot || BOT_SEED[r.id] !== undefined);   // боты не из нынешнего списка не показываем
         for (const r of rows) if (r.isBot) state.bots[r.id] = r.ducks;
         const me = rows.find((r) => r.id === state.id);
         if (me && !state.pending.length) state.ducks = me.ducks;

@@ -18,11 +18,11 @@ import { enemiesOf, lineClear, wrapAngle } from './combat.js';
 // от части снарядов не уворачивается.
 // ============================================================
 
+// ники ботов — как у игроков в онлайн-играх; те же боты стоят в таблице рейтинга
 export const BOT_NAMES = [
-  'Артём', 'Дима', 'Саша', 'Максим', 'Никита', 'Кирилл', 'Егор', 'Ваня', 'Миша', 'Тимур',
-  'Руслан', 'Данияр', 'Арсен', 'Лёша', 'Рома', 'Катя', 'Аня', 'Лиза', 'Маша', 'Даша',
-  'Полина', 'Алина', 'Камила', 'Вика', 'Соня', 'Ильяс', 'Азамат', 'Нурлан', 'Женя', 'Стас',
-];
+  'xX_Killer_Xx', 'Dark_Mango', 'NoobMaster', 'Sultan228', 'ShadowFox',
+  'Pro100Kek', 'Toxic_Panda', 'MegaBrain', 'Lil_Chak', 'GigaChad_77',
+]
 
 export const randomBotName = (taken = []) => {
   const free = BOT_NAMES.filter((n) => !taken.includes(n));

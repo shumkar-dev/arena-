@@ -11,6 +11,9 @@ import { loadPrefs, savePrefs } from './ui/prefs.js';
 import { sound } from './game/sound.js';
 import { rankOf, rewardFor, isRanked, botSkill } from './rating/ranks.js';
 import { playerDucks, pickBotNames, applyMatch, flush } from './rating/store.js';
+import DuckIcon from './ui/DuckIcon.jsx';
+import NameModal from './ui/menu/NameModal.jsx';
+import { goLandscape, usePortrait } from './ui/orientation.js';
 
 const params = new URLSearchParams(location.search);
 // Отладка и автотесты:
@@ -43,6 +46,7 @@ export default function App() {
   useEffect(() => { flush(); }, []);   // отправить то, что не ушло в прошлый раз
 
   const playerName = prefs.playerName.trim() || 'Игрок';
+  const needName = !prefs.playerName.trim() && view !== 'arena' && !params.has('autoplay');   // первый вход — спросить ник
 
   // на каждый матч: соперники твоего уровня из рейтинга и мастерство ботов по твоему званию
   // (утки берутся на момент старта — чтобы награда не пересоздавала идущий матч)
@@ -70,14 +74,14 @@ export default function App() {
     return { delta: me?.delta ?? 0, after, rank, rankUp: rank.index > was.index, rankDown: rank.index < was.index };
   }, [playerName]);
 
-  // по первому касанию: разрешить звук, а на телефоне — полный экран и горизонталь
-  const onFirstTouch = () => {
+  // горизонталь на весь экран: пробуем сразу при запуске (сработает в установленном
+  // приложении), затем при касаниях — браузеры разрешают это только по жесту
+  const portrait = usePortrait();
+  useEffect(() => { goLandscape(); }, []);
+  const onTouch = (e) => {
     sound.unlock();
-    const el = document.documentElement;
-    if (document.fullscreenElement || !el.requestFullscreen) return;
-    el.requestFullscreen({ navigationUI: 'hide' })
-      .then(() => screen.orientation?.lock?.('landscape'))
-      .catch(() => {});
+    if (e.target.closest?.('input, textarea, .name-form')) return;   // не мешать вводу ника
+    if (matchMedia('(pointer: coarse)').matches && (!document.fullscreenElement || portrait)) goLandscape();
   };
 
   const setMute = (v) => { sound.setMuted(v); setMuted(v); };
@@ -100,7 +104,7 @@ export default function App() {
     const rank = rankOf(ducks);
     const badge = (
       <button className="rank-badge" onClick={() => setView('rating')}>
-        <span className="rank-badge-ducks">🦆 {ducks}</span>
+        <span className="rank-badge-ducks"><DuckIcon /> {ducks}</span>
         <span className="rank-badge-name" style={{ color: rank.color }}>{rank.name}</span>
       </button>
     );
@@ -108,7 +112,7 @@ export default function App() {
   }
 
   return (
-    <div className={`game ${view === 'arena' ? 'in-arena' : 'in-menu'}`} onPointerDownCapture={onFirstTouch}>
+    <div className={`game ${view === 'arena' ? 'in-arena' : 'in-menu'}`} onPointerDownCapture={onTouch}>
       {body}
       <button
         className="sound-toggle"
@@ -117,9 +121,11 @@ export default function App() {
       >
         {muted ? '🔇' : '🔊'}
       </button>
-      <div className="rotate-hint">
+      {needName && <NameModal onSave={(name) => update({ playerName: name })} />}
+      <div className={`rotate-hint ${portrait ? 'show' : ''}`}>
         <div className="rotate-phone" />
         <p>Поверни телефон горизонтально</p>
+        <button className="bs-btn bs-btn-gold" onClick={goLandscape}>Развернуть</button>
       </div>
     </div>
   );

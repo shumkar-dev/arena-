@@ -1,7 +1,8 @@
 import React from 'react';
 import TopBar from './TopBar.jsx';
+import NameInput from '../NameInput.jsx';
 
-// Настройки: звук, громкость, имя, качество графики.
+// Настройки: звук, громкость, ник, качество графики.
 export default function Settings({ prefs, muted, onMuted, onChange, onBack }) {
   return (
     <div className="menu">
@@ -16,11 +17,10 @@ export default function Settings({ prefs, muted, onMuted, onChange, onBack }) {
           <input type="range" min="0" max="1" step="0.05" value={prefs.volume} disabled={muted}
             onChange={(e) => onChange({ volume: Number(e.target.value) })} />
         </label>
-        <label className="set-row">
-          <span>Имя</span>
-          <input className="name-input" maxLength={16} placeholder="Как тебя зовут?" value={prefs.playerName}
-            onChange={(e) => onChange({ playerName: e.target.value })} />
-        </label>
+        <div className="set-row">
+          <span>Ник</span>
+          <NameInput value={prefs.playerName} onSave={(name) => onChange({ playerName: name })} />
+        </div>
         <label className="set-row">
           <span>Графика</span>
           <span className="seg">
