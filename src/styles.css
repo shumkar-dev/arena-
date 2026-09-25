@@ -1,0 +1,146 @@
+:root {
+  --red-900: #2a0a0c;
+  --red-800: #4a0f14;
+  --red-700: #7a1620;
+  --red-500: #c42a35;
+  --gold: #f2c14e;
+  --ink: #fff4ec;
+  font-family: 'Oswald', 'Arial Narrow', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body, #root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--red-900);
+  color: var(--ink);
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.game { position: fixed; inset: 0; touch-action: none; }
+.viewport { position: absolute; inset: 0; }
+
+/* ---- верх ---- */
+.hud-top {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: max(14px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+.hero-tag {
+  background: linear-gradient(180deg, var(--red-500), var(--red-700));
+  border: 2px solid var(--red-900);
+  box-shadow: 0 3px 0 var(--red-900);
+  padding: 4px 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-shadow: 0 2px 0 var(--red-900);
+}
+
+/* ---- джойстик ---- */
+.joy-zone {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 45%;
+  touch-action: none;
+}
+.joy-base {
+  position: absolute;
+  width: 128px; height: 128px;
+  margin: -64px 0 0 -64px;
+  border-radius: 50%;
+  background: rgba(20, 4, 6, 0.35);
+  border: 3px solid rgba(255, 240, 230, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.joy-idle {
+  left: calc(max(24px, env(safe-area-inset-left)) + 84px);
+  top: auto;
+  bottom: 30px;
+  margin: 0 0 0 -64px;
+  opacity: 0.55;
+}
+.joy-knob {
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #ffffff, #e6d7cf);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* ---- кнопки ---- */
+.actions {
+  position: absolute;
+  right: max(22px, env(safe-area-inset-right));
+  bottom: 22px;
+  width: 190px; height: 190px;
+}
+.actions button {
+  position: absolute;
+  border-radius: 50%;
+  font-family: inherit;
+  color: var(--ink);
+  font-weight: 600;
+  touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+.actions button:active { transform: scale(0.93); }
+
+.btn-attack {
+  right: 0; bottom: 0;
+  width: 104px; height: 104px;
+  background: radial-gradient(circle at 40% 30%, #ff5a5f, var(--red-500) 55%, var(--red-700));
+  border: 4px solid var(--red-900);
+  box-shadow: 0 5px 0 var(--red-900);
+  font-size: 40px;
+}
+
+.btn-ult {
+  left: 0; top: 0;
+  width: 84px; height: 84px;
+  border: 4px solid var(--red-900);
+  background:
+    radial-gradient(circle, #3a0d12 58%, transparent 60%),
+    conic-gradient(var(--gold) var(--cd), rgba(0, 0, 0, 0.45) 0);
+  box-shadow: 0 4px 0 var(--red-900);
+  font-size: 22px;
+}
+.btn-ult span { color: #cfb9b0; }
+.btn-ult.ready {
+  background: radial-gradient(circle at 40% 30%, #ffe28a, var(--gold) 55%, #b9851c);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+.btn-ult.ready span { color: var(--red-900); font-size: 15px; letter-spacing: 0.04em; }
+.btn-ult.active { box-shadow: 0 0 18px 4px var(--gold), 0 4px 0 var(--red-900); }
+
+@keyframes pulse {
+  50% { box-shadow: 0 0 16px 3px rgba(242, 193, 78, 0.8), 0 4px 0 var(--red-900); }
+}
+
+/* ---- портрет: просим повернуть ---- */
+.rotate-hint {
+  display: none;
+  position: absolute; inset: 0;
+  background: radial-gradient(circle, var(--red-800), var(--red-900));
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; text-align: center; font-size: 22px; padding: 24px;
+  z-index: 10;
+}
+.rotate-phone {
+  width: 54px; height: 92px;
+  border: 5px solid var(--ink);
+  border-radius: 10px;
+  animation: turn 2s ease-in-out infinite;
+}
+@keyframes turn { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+
+@media (orientation: portrait) and (pointer: coarse) {
+  .rotate-hint { display: flex; }
+}
