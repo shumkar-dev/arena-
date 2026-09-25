@@ -93,6 +93,8 @@ export function createSmitanaKit(me) {
     ultAutoRange: 8,       // короткое касание ульты разворачивает струю к врагу в этом радиусе
     // форма прицела ульты: конус струи в выбранную сторону
     ultShape: { type: 'cone', reach: me.radius + T.sprayReach, arc: T.sprayArc },
+    // пока идёт атака — смотрит туда, куда целился, а не по джойстику
+    get lockFacing() { return s.throwT >= 0 ? s.aimAngle : null; },
     get busy() { return false; },
     get speedMul() { return s.ultT > 0 ? T.sprayMoveMul : 1; },
 
@@ -133,6 +135,7 @@ export function createSmitanaKit(me) {
       const free = s.throwT < 0 && s.ultT <= 0 && me.canAct();
       if (chain.tick(dt, free)) {
         aimAttack(me, world, chain.dir, T.autoAim);
+        s.aimAngle = me.facing;
         s.throwT = 0;
         s.released = false;
         s.special = chain.special;

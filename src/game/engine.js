@@ -177,13 +177,19 @@ export function createGame(mount, input, onHud, heroId) {
 
     player.moving = mag > 0.12 && player.canAct() && !kit.busy;
     const before = player.pos.clone();
+    // Пока кнопка атаки оттянута или идёт атака, герой смотрит в сторону прицела,
+    // даже если бежит в другую сторону (как в Brawl Stars). Иначе — по ходу движения.
+    const aimingAttack = input.attackAim?.active && !!dragDir(input.attackAim.dx, input.attackAim.dy);
+    const holdFacing = aimingAttack || kit.lockFacing != null;
     if (player.moving) {
       const speed = hero.stats.speed * kit.speedMul * player.moveMul();
       player.pos.x += mx * speed * mag * dt;
       player.pos.z += mz * speed * mag * dt;
-      // плавный поворот к направлению движения
-      const d = Math.atan2(Math.sin(Math.atan2(mx, mz) - player.facing), Math.cos(Math.atan2(mx, mz) - player.facing));
-      player.facing += d * Math.min(1, dt * 14);
+      if (!holdFacing) {
+        // плавный поворот к направлению движения
+        const d = Math.atan2(Math.sin(Math.atan2(mx, mz) - player.facing), Math.cos(Math.atan2(mx, mz) - player.facing));
+        player.facing += d * Math.min(1, dt * 14);
+      }
     }
 
     // пока кнопка атаки оттянута, герой смотрит в сторону прицела (так же ведётся струя сметанамёта)
@@ -193,6 +199,8 @@ export function createGame(mount, input, onHud, heroId) {
     }
 
     kit.update(dt, world);
+    // атака началась или идёт — держим угол, в который она направлена
+    if (kit.lockFacing != null) player.facing = kit.lockFacing;
     if (kit.forcedMoving != null) player.moving = kit.forcedMoving;
 
     // --- столкновения ---
@@ -261,6 +269,7 @@ export function createGame(mount, input, onHud, heroId) {
   return {
     fighters,
     hero,
+    projectiles: projectiles.list,
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();

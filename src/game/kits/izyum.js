@@ -82,6 +82,8 @@ export function createIzyumKit(me) {
 
   return {
     ultAim: 'tap',
+    // пока идёт атака — смотрит туда, куда целился, а не по джойстику
+    get lockFacing() { return s.shotT >= 0 ? s.aimAngle : null; },
     get busy() { return s.ultT > 0; },   // в ульте движением управляет сам приём
     get speedMul() { return 1; },
 
@@ -143,6 +145,7 @@ export function createIzyumKit(me) {
       const free = s.shotT < 0 && s.ultT <= 0 && me.canAct();
       if (chain.tick(dt, free)) {
         aimAttack(me, world, chain.dir, T.autoAim);
+        s.aimAngle = me.facing;
         s.shotT = 0;
         s.released = false;
         s.special = chain.special;
