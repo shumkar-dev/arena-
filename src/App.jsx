@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HEROES } from './heroes/index.js';
 import { MODES } from './modes/index.js';
 import Arena from './ui/Arena.jsx';
@@ -14,6 +14,8 @@ import { playerDucks, pickBotNames, applyMatch, flush } from './rating/store.js'
 import DuckIcon from './ui/DuckIcon.jsx';
 import NameModal from './ui/menu/NameModal.jsx';
 import { goLandscape, usePortrait } from './ui/orientation.js';
+import FriendPlay from './ui/menu/FriendPlay.jsx';
+import { createNet } from './net/client.js';
 
 const params = new URLSearchParams(location.search);
 // Отладка и автотесты:
@@ -41,12 +43,34 @@ export default function App() {
   const [muted, setMuted] = useState(sound.muted);
   const [ducks, setDucks] = useState(playerDucks);   // утки игрока (рейтинг)
 
+  // игра с другом по сети: соединение одно на всё приложение
+  const netRef = useRef(null);
+  if (!netRef.current) netRef.current = createNet();
+  const net = netRef.current;
+  const [netGame, setNetGame] = useState(null);     // { you, players, n } — идёт сетевой бой
+  const [netWait, setNetWait] = useState(0);        // сколько игроков нажали «Ещё раз»
+  const [netNotice, setNetNotice] = useState('');   // «соперник вышел» и т. п.
+  useEffect(() => {
+    const offs = [
+      net.on('start', (m) => {
+        setNetGame((g) => ({ you: m.you, players: m.players, n: (g?.n ?? 0) + 1 }));
+        setNetWait(0);
+        setNetNotice('');
+        setView('arena-net');
+      }),
+      net.on('again', (m) => setNetWait(m.n)),
+      net.on('left', () => setNetNotice('Соперник вышел из боя')),
+      net.on('close', () => setNetNotice((n) => n || 'Связь с сервером потеряна')),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [net]);
+
   const update = useCallback((patch) => setPrefs((p) => ({ ...p, ...patch })), []);
   useEffect(() => { savePrefs(prefs); sound.setVolume(prefs.volume); }, [prefs]);
   useEffect(() => { flush(); }, []);   // отправить то, что не ушло в прошлый раз
 
   const playerName = prefs.playerName.trim() || 'Игрок';
-  const needName = !prefs.playerName.trim() && view !== 'arena' && !params.has('autoplay');   // первый вход — спросить ник
+  const needName = !prefs.playerName.trim() && !view.startsWith('arena') && !params.has('autoplay');   // первый вход — спросить ник
 
   // на каждый матч: соперники твоего уровня из рейтинга и мастерство ботов по твоему званию
   // (утки берутся на момент старта — чтобы награда не пересоздавала идущий матч)
@@ -87,10 +111,22 @@ export default function App() {
   const setMute = (v) => { sound.setMuted(v); setMuted(v); };
   const again = useCallback(() => setRound((r) => r + 1), []);
   const toMenu = useCallback(() => setView('main'), []);
+  const leaveNet = useCallback(() => { net.leave(); setNetGame(null); setNetNotice(''); setView('main'); }, [net]);
+  const netOptions = useMemo(() => netGame && ({
+    quality: prefs.quality,
+    net: { conn: net, you: netGame.you, players: netGame.players },
+  }), [netGame, prefs.quality, net]);
   const play = () => { setRound((r) => r + 1); setView('arena'); };
 
   let body;
-  if (view === 'arena') {
+  if (view === 'arena-net' && netGame) {
+    body = (
+      <Arena key={`net-${netGame.n}`} modeId="online" heroId={netGame.players[netGame.you].hero} options={netOptions} debug={debug}
+        onExit={leaveNet} onAgain={() => net.again()} waitingAgain={netWait > 0} notice={netNotice} />
+    );
+  } else if (view === 'friend') {
+    body = <FriendPlay net={net} heroId={prefs.heroId} playerName={playerName} onBack={toMenu} />;
+  } else if (view === 'arena') {
     body = <Arena key={`${prefs.modeId}-${prefs.heroId}-${round}`} modeId={prefs.modeId} heroId={prefs.heroId} options={options} debug={debug} onExit={toMenu} onAgain={again} onResult={onResult} />;
   } else if (view === 'modes') {
     body = <ModeSelect modeId={prefs.modeId} onPick={(id) => { update({ modeId: id }); setView('main'); }} onBack={toMenu} />;
@@ -112,7 +148,7 @@ export default function App() {
   }
 
   return (
-    <div className={`game ${view === 'arena' ? 'in-arena' : 'in-menu'}`} onPointerDownCapture={onTouch}>
+    <div className={`game ${view.startsWith('arena') ? 'in-arena' : 'in-menu'}`} onPointerDownCapture={onTouch}>
       {body}
       <button
         className="sound-toggle"

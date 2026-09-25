@@ -9,7 +9,7 @@ import MatchResult from './MatchResult.jsx';
 const KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
 
 // Экран боя: 3D-арена, джойстик, кнопки, счёт режима, итог матча.
-export default function Arena({ modeId, heroId, options, debug, onExit, onAgain, onResult }) {
+export default function Arena({ modeId, heroId, options, debug, onExit, onAgain, onResult, waitingAgain, notice }) {
   const hero = heroById(heroId);
   const mountRef = useRef(null);
   const input = useRef({ moveX: 0, moveY: 0, attack: false, ult: false, ultAim: null, ultFire: null }).current;
@@ -83,7 +83,16 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
           </div>
         </div>
       )}
-      {hud.result && <MatchResult result={hud.result} reward={reward} onAgain={onAgain} onExit={onExit} />}
+      {hud.ping != null && <div className="net-ping">📶 {hud.ping} мс</div>}
+      {notice && (
+        <div className="result lose">
+          <div className="result-box">
+            <div className="result-reason">{notice}</div>
+            <div className="result-buttons"><button className="btn-big" onClick={onExit}>В меню</button></div>
+          </div>
+        </div>
+      )}
+      {hud.result && !notice && <MatchResult result={hud.result} reward={reward} waiting={waitingAgain} onAgain={onAgain} onExit={onExit} />}
     </>
   );
 }

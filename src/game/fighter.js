@@ -130,7 +130,8 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     if (!f.alive) {
       f.deathT += dt;
       f.respawnIn = Math.max(0, f.respawnIn - dt);
-      if (f.respawnIn <= 0) f.respawn();
+      // в сетевой игре возрождает сервер (снимок), а не таймер на устройстве
+      if (f.respawnIn <= 0 && !f.netClient) f.respawn();
       return;
     }
     for (const k in f.effects) {

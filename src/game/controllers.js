@@ -11,8 +11,8 @@ import { nearestEnemy } from './combat.js';
 //
 //   local  — кнопки и джойстик этого устройства
 //   bot    — бот (bot.js)
-//   remote — (ещё нет) игрок по сети: команды приходят в сообщениях и отдаются
-//            отсюда; всё остальное — матч, режимы, герои — не меняется.
+//   remote — игрок по сети: команды приходят в сообщениях (src/net/sync.js) и
+//            отдаются отсюда; всё остальное — матч, режимы, герои — не меняется.
 // ============================================================
 
 // Оттяжка кнопки: (dx, dy) — вектор −1..1 в экранных осях, экранный низ = +Z.
@@ -38,21 +38,38 @@ export function ultPoint(f, world, dx, dy) {
 }
 
 // кнопки этого устройства: input заполняют джойстик и кнопки (src/ui)
-export function createLocalController(f, input) {
+// flip — камера смотрит с другой стороны (сетевой игрок на севере): экранные оси перевёрнуты
+export function createLocalController(f, input, { flip = false } = {}) {
+  const k = flip ? -1 : 1;
   return {
     command(dt, world) {
-      const cmd = { moveX: input.moveX, moveZ: input.moveY, aimDir: null };
-      if (input.attackAim?.active) cmd.aimDir = dragDir(input.attackAim.dx, input.attackAim.dy);
+      const cmd = { moveX: input.moveX * k, moveZ: input.moveY * k, aimDir: null };
+      if (input.attackAim?.active) cmd.aimDir = dragDir(input.attackAim.dx * k, input.attackAim.dy * k);
       if (input.attack) { input.attack = false; cmd.attack = null; }          // касание — автоприцел
       if (input.attackFire) {                                                   // отпустили оттянутую кнопку
-        cmd.attack = dragDir(input.attackFire.dx, input.attackFire.dy);
+        cmd.attack = dragDir(input.attackFire.dx * k, input.attackFire.dy * k);
         input.attackFire = null;
       }
       if (input.ult) { input.ult = false; cmd.ult = f.kit.ultAim === 'drag' ? ultPoint(f, world, 0, 0) : null; }
-      if (input.ultFire) { cmd.ult = ultPoint(f, world, input.ultFire.dx, input.ultFire.dy); input.ultFire = null; }
+      if (input.ultFire) { cmd.ult = ultPoint(f, world, input.ultFire.dx * k, input.ultFire.dy * k); input.ultFire = null; }
       return cmd;
     },
   };
+}
+
+// игрок по сети: движение и прицел — последнее присланное, удары и ульты — по очереди
+export function createRemoteController() {
+  const ctl = {
+    move: { moveX: 0, moveZ: 0, aimDir: null },
+    queue: [],            // { attack } | { ult }
+    command() {
+      const cmd = { ...ctl.move };
+      const one = ctl.queue.shift();
+      if (one) Object.assign(cmd, one);
+      return cmd;
+    },
+  };
+  return ctl;
 }
 
 export function createBotController(f, opts) {
