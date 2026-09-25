@@ -2,7 +2,7 @@ import React from 'react';
 import TopBar from './TopBar.jsx';
 import NameInput from '../NameInput.jsx';
 
-// Настройки: звук, громкость, ник, качество графики.
+// Настройки: звук, громкость звуков, голосов и музыки, ник, качество графики.
 export default function Settings({ prefs, muted, onMuted, onChange, onBack }) {
   return (
     <div className="menu">
@@ -12,11 +12,13 @@ export default function Settings({ prefs, muted, onMuted, onChange, onBack }) {
           <span>Звук</span>
           <button className={`toggle ${muted ? '' : 'on'}`} onClick={() => onMuted(!muted)}>{muted ? 'Выкл' : 'Вкл'}</button>
         </label>
-        <label className="set-row">
-          <span>Громкость</span>
-          <input type="range" min="0" max="1" step="0.05" value={prefs.volume} disabled={muted}
-            onChange={(e) => onChange({ volume: Number(e.target.value) })} />
-        </label>
+        {[['volume', 'Звуки'], ['voiceVolume', 'Голоса'], ['musicVolume', 'Музыка']].map(([key, label]) => (
+          <label className="set-row" key={key}>
+            <span>{label}</span>
+            <input type="range" min="0" max="1" step="0.05" value={prefs[key]} disabled={muted}
+              onChange={(e) => onChange({ [key]: Number(e.target.value) })} />
+          </label>
+        ))}
         <div className="set-row">
           <span>Ник</span>
           <NameInput value={prefs.playerName} onSave={(name) => onChange({ playerName: name })} />

@@ -9,6 +9,7 @@ export default {
   role: 'Ближний бой',
   about: 'Бьёт щупальцами, третий удар ускоряет атаку. Ульта — шмель летит в точку и взрывается: зажми и оттяни, чтобы выбрать её.',
   color: '#2e9e93',
+  voice: 'garga',          // файлы озвучки: public/voices/garga_<событие>.mp3
   icons: { attack: '🐙', special: '⚡' },
   stats: S,
   createModel: createGargashmel,

@@ -3,6 +3,7 @@ import TopBar from './TopBar.jsx';
 import BalanceTable from './BalanceTable.jsx';
 import HeroStage from './HeroStage.jsx';
 import { HEROES, heroById } from '../../heroes/index.js';
+import { voice } from '../../game/voice.js';
 
 // Выбор героя: слева список, в центре — герой на подиуме, справа — атаки и ульта.
 export default function HeroPicker({ heroId, onPick, onBack }) {
@@ -17,7 +18,7 @@ export default function HeroPicker({ heroId, onPick, onBack }) {
       <div className="picker">
         <div className="picker-list">
           {HEROES.map((h) => (
-            <button key={h.id} className={`picker-item ${h.id === viewId ? 'on' : ''}`} style={{ '--hero': h.color }} onClick={() => setViewId(h.id)}>
+            <button key={h.id} className={`picker-item ${h.id === viewId ? 'on' : ''}`} style={{ '--hero': h.color }} onClick={() => { setViewId(h.id); voice.play(h, 'select'); }}>
               <span className="picker-icon">{h.icons.attack}</span>
               <span className="picker-name">{h.name}</span>
               {h.id === heroId && <span className="picker-mark">★</span>}

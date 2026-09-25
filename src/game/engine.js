@@ -11,6 +11,7 @@ import { createOverlay } from './overlay.js';
 import { createEffects } from './effects.js';
 import { createAim } from './aim.js';
 import { sound } from './sound.js';
+import { voice } from './voice.js';
 
 // ============================================================
 // ДВИЖОК — отображение матча: сцена, камера, прицел, полоски ХП, звук, HUD.
@@ -97,18 +98,50 @@ export function createGame(mount, input, onHud, options = {}) {
     else if (f.control === 'remote' && sync) controllers.set(f, sync.remotes.get(f));
   }
 
+  // ---- реплики своего героя (voice.js): старт, изредка удар, ульта, боль, убийство, смерть, победа ----
+  const talk = !options.autoplay;
+  const hero = player.hero;
+  if (talk) voice.preload(hero);
+  const vs = { started: false, attacks: 0, nextAttack: 3, lastHurt: -9, kills: player.kills, alive: true, ultCd: 0 };
+  const voiceHooks = () => {
+    if (!talk || match.result) return;
+    const t = match.world.time;
+    if (!vs.started && t > 0.6) { vs.started = true; voice.play(hero, 'start'); }
+    // удар — не каждый, а примерно раз в 3–4
+    if (player.cmd?.attack !== undefined && player.alive && ++vs.attacks >= vs.nextAttack) {
+      vs.attacks = 0;
+      vs.nextAttack = 3 + (Math.random() < 0.5 ? 0 : 1);
+      voice.play(hero, 'attack');
+    }
+    const cd = player.kit.hud().ultCd;
+    if (cd > vs.ultCd + 1) voice.play(hero, 'ult');     // перезарядка ульты началась — ульта сработала
+    vs.ultCd = cd;
+    if (player.kills > vs.kills) voice.play(hero, 'kill');
+    vs.kills = player.kills;
+    if (vs.alive && !player.alive) voice.play(hero, 'death');
+    vs.alive = player.alive;
+  };
+
   // ---- события матча → экран и звук ----
   const handleEvents = () => {
     for (const e of match.events) {
       if (e.type === 'damage') {
         overlay.spawnNumber(e.target, e.amount, e.target === player ? 'taken' : e.kind);
-        if (e.target === player) sound.play('hurt');
+        if (e.target === player) {
+          sound.play('hurt');
+          // «больно» — не чаще раза в 4 с
+          if (talk && player.alive && match.world.time - vs.lastHurt > 4) { vs.lastHurt = match.world.time; voice.play(hero, 'hurt'); }
+        }
       } else if (e.type === 'heal') overlay.spawnNumber(e.target, `+${e.amount}`, 'heal');
       else if (e.type === 'say') overlay.spawnNumber(e.f, e.text, 'text');
       else if (e.type === 'sfx') sound.play(e.name, e.opts);
       else if (e.type === 'death') sound.play('death');
       else if (e.type === 'respawn') sound.play('respawn');
-      else if (e.type === 'finish') sound.play(e.result.winners.includes(player.team) ? 'victory' : 'defeat');
+      else if (e.type === 'finish') {
+        const win = e.result.winners.includes(player.team);
+        sound.play(win ? 'victory' : 'defeat');
+        if (win && talk) setTimeout(() => voice.play(hero, 'win'), 500);
+      }
     }
     match.events.length = 0;
   };
@@ -141,6 +174,7 @@ export function createGame(mount, input, onHud, options = {}) {
     const frozen = match.result && match.world.time - match.result.at > END_DELAY;
     if (!frozen) match.step(dt, controllers);
     sync?.afterStep(dt);
+    voiceHooks();
     handleEvents();
     fx.update(dt);
     match.world.pickups.animate(t);

@@ -10,7 +10,9 @@ const DEFAULTS = {
   modeId: 'duel',
   heroId: 'shaba',
   playerName: '',
-  volume: 0.8,
+  volume: 0.8,            // звуки (удары, взрывы)
+  voiceVolume: 0.9,       // голоса героев
+  musicVolume: 0.5,       // музыка
   quality: 'high',        // 'high' — тени и чёткость, 'low' — для слабых телефонов
 };
 
