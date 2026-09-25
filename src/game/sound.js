@@ -317,6 +317,14 @@ const SOUNDS = {
     noise({ f0: 900, f1: 90, dur: 0.75, gain: 0.5, rev: 0.4 });
     tone({ type: 'sawtooth', f0: 150, f1: 55, dur: 0.9, gain: 0.14, lp: 500, rev: 0.4, delay: 0.05 });
   },
+  victory() {                       // победа: тёплый восходящий аккорд с хвостом
+    [262, 330, 392, 523].forEach((f, i) => tone({ type: 'triangle', f0: f, dur: 1.4, att: 0.04, gain: 0.13, lp: 2200, delay: i * 0.09, rev: 0.6 }));
+    thump({ f0: 110, f1: 55, dur: 0.4, gain: 0.7, rev: 0.3 });
+  },
+  defeat() {                        // поражение: нисходящий глухой аккорд
+    [311, 247, 196].forEach((f, i) => tone({ type: 'triangle', f0: f, f1: f * 0.94, dur: 1.3, att: 0.05, gain: 0.13, lp: 1200, delay: i * 0.14, rev: 0.6 }));
+    thump({ f0: 80, f1: 35, dur: 0.6, gain: 0.8, rev: 0.4 });
+  },
   respawn() {                       // возрождение: восходящий шелест и мягкий аккорд
     noise({ filter: 'bandpass', f0: 350, f1: 3200, q: 2.5, dur: 0.55, att: 0.2, gain: 0.3, rev: 0.4 });
     [262, 392, 523].forEach((f, i) => tone({ type: 'triangle', f0: f, dur: 0.8, att: 0.05, gain: 0.1, lp: 1400, delay: 0.15 + i * 0.05, rev: 0.6 }));

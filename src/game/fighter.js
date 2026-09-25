@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
 // ============================================================
-// БОЕЦ — общее для игрока, манекена и будущих ботов:
-// ХП, получение урона, вспышка и отшатывание, смерть, возрождение.
+// БОЕЦ — общее для игрока, ботов, манекена, бутылок и прохожих:
+// ХП, получение урона, статусы, смерть, возрождение.
+// tick(dt) — логика (часть симуляции матча), updateView(dt) — только картинка.
 // Что и как бьёт — решает набор приёмов героя (src/heroes/<id>/kit.js).
 // ============================================================
 
@@ -12,7 +13,10 @@ const DEATH_HIDE = 1.0;    // когда тело исчезает
 
 let nextId = 1;
 
-export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, headY = 2.9 }) {
+const RING_COLORS = { self: 0x3fd0ff, ally: 0x5ce06a, enemy: 0xff4a4a, neutral: 0xd9d2c0 };
+
+// side — чей это боец для локального игрока: 'self' | 'ally' | 'enemy' | 'neutral' (цвет кольца и полоски ХП)
+export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, headY = 2.9, side = 'enemy', respawns = true }) {
   const wrapper = new THREE.Group();
   wrapper.add(model.root);
 
@@ -24,7 +28,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.62, 0.78, 32),
-    new THREE.MeshBasicMaterial({ color: team === 'blue' ? 0x3fd0ff : 0xff4a4a, transparent: true, opacity: 0.85 })
+    new THREE.MeshBasicMaterial({ color: RING_COLORS[side] ?? 0xff4a4a, transparent: true, opacity: 0.85 })
   );
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.03;
@@ -52,6 +56,9 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     hitDir: new THREE.Vector2(0, 1),
     grabbedBy: null,         // кто держит этого бойца
     effects: {},             // статусы: имя → { t — сколько осталось, ...данные }
+    side,
+    respawns,                // возрождается ли после смерти (в «каждый сам за себя» — нет)
+    kills: 0,
   };
 
   // статусы: slow { mul } — замедление, frenzy — ускоренная атака и т. п.
@@ -77,7 +84,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     if (f.hp <= 0) {
       f.alive = false;
       f.deathT = 0;
-      f.respawnIn = RESPAWN_TIME;
+      f.respawnIn = f.respawns ? RESPAWN_TIME : Infinity;
       f.grabbedBy = null;
       f.lift = 0;
       f.effects = {};
@@ -109,20 +116,27 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     model.root.rotation.z = -lx * amt;
   };
 
-  // вызывается после animate модели
-  f.updateView = (dt) => {
+  // логика: таймеры статусов, смерти и возрождения
+  f.tick = (dt) => {
     if (!f.alive) {
       f.deathT += dt;
       f.respawnIn = Math.max(0, f.respawnIn - dt);
+      if (f.respawnIn <= 0) f.respawn();
+      return;
+    }
+    for (const k in f.effects) {
+      f.effects[k].t -= dt;
+      if (f.effects[k].t <= 0) delete f.effects[k];
+    }
+  };
+
+  // картинка: вызывается после animate модели
+  f.updateView = (dt) => {
+    if (!f.alive) {
       tilt(Math.min(1, f.deathT / DEATH_FALL) * (Math.PI / 2));
       model.root.position.y = 0;
       if (f.deathT > DEATH_HIDE) { wrapper.visible = false; ring.visible = false; }
-      if (f.respawnIn <= 0) f.respawn();
     } else {
-      for (const k in f.effects) {
-        f.effects[k].t -= dt;
-        if (f.effects[k].t <= 0) delete f.effects[k];
-      }
       f.flinch = Math.max(0, f.flinch - dt * 6);
       tilt(Math.sin(f.flinch * Math.PI) * 0.28);
       model.root.position.y = f.lift;
@@ -139,6 +153,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
   };
 
   f.addTo = (scene) => { scene.add(wrapper); scene.add(ring); };
+  f.removeFrom = (scene) => { scene.remove(wrapper); scene.remove(ring); };
 
   return f;
 }
