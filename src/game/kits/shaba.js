@@ -88,6 +88,7 @@ export function createShabaKit(me) {
   };
 
   const kit = {
+    ultAim: 'tap',
     get busy() { return s.action === 'hold' || s.action === 'lunge'; },
     get speedMul() { return s.ultT > 0 ? T.ultSpeedMul : 1; },
 
