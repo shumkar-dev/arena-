@@ -1,6 +1,7 @@
 import React from 'react';
 import TopBar from './TopBar.jsx';
 import NameInput from '../NameInput.jsx';
+import VolumeSliders from '../VolumeSliders.jsx';
 
 // Настройки: звук, громкость звуков, голосов и музыки, ник, качество графики.
 export default function Settings({ prefs, muted, onMuted, onChange, onBack }) {
@@ -12,13 +13,7 @@ export default function Settings({ prefs, muted, onMuted, onChange, onBack }) {
           <span>Звук</span>
           <button className={`toggle ${muted ? '' : 'on'}`} onClick={() => onMuted(!muted)}>{muted ? 'Выкл' : 'Вкл'}</button>
         </label>
-        {[['volume', 'Звуки'], ['voiceVolume', 'Голоса'], ['musicVolume', 'Музыка']].map(([key, label]) => (
-          <label className="set-row" key={key}>
-            <span>{label}</span>
-            <input type="range" min="0" max="1" step="0.05" value={prefs[key]} disabled={muted}
-              onChange={(e) => onChange({ [key]: Number(e.target.value) })} />
-          </label>
-        ))}
+        <VolumeSliders prefs={prefs} onChange={onChange} muted={muted} heroId={prefs.heroId} />
         <div className="set-row">
           <span>Ник</span>
           <NameInput value={prefs.playerName} onSave={(name) => onChange({ playerName: name })} />

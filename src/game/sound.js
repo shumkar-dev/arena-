@@ -23,6 +23,21 @@ let muted = false;
 let volume = 0.8;       // 0..1, громкость звуков — из настроек
 let mainOut = null;     // общий выход всех каналов: 0 — звук выключен
 const buses = {};       // voice, music — входы каналов голосов и музыки
+let sfxVol = null;      // громкость звуков — после компрессора, чтобы ползунок убавлял и громкие взрывы
+
+// Ползунок 0..1 → усиление. Слух воспринимает громкость логарифмически: при линейной
+// шкале половина ползунка — всего −6 дБ, почти незаметно на динамике телефона.
+// Квадрат даёт ровный ход: 0,5 → −12 дБ, 0,25 → −24 дБ, 0 — тишина.
+const curve = (v) => v * v;
+
+// сменить усиление сразу (без хвоста от прошлых плавных изменений)
+function setGain(node, value) {
+  if (!node || !ctx) return;
+  const now = ctx.currentTime;
+  node.gain.cancelScheduledValues(now);
+  node.gain.setValueAtTime(node.gain.value, now);
+  node.gain.linearRampToValueAtTime(value, now + 0.03);
+}
 const busVolume = { voice: 0.9, music: 0.5 };
 const unlockers = [];   // кому сообщить, что звук разрешён (музыке)
 try { muted = localStorage.getItem(STORE_KEY) === '1'; } catch { /* приватный режим — звук включён */ }
@@ -42,19 +57,21 @@ function ensure() {
   mainOut.connect(ctx.destination);
   for (const name of ['voice', 'music']) {
     buses[name] = ctx.createGain();
-    buses[name].gain.value = busVolume[name];
+    buses[name].gain.value = curve(busVolume[name]);
     buses[name].connect(mainOut);
   }
 
   const out = ctx.createGain();
-  out.gain.value = MASTER * volume;
+  out.gain.value = MASTER;
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -16;
   comp.knee.value = 12;
   comp.ratio.value = 5;
   comp.attack.value = 0.003;
   comp.release.value = 0.2;
-  out.connect(comp).connect(mainOut);
+  sfxVol = ctx.createGain();
+  sfxVol.gain.value = curve(volume);
+  out.connect(comp).connect(sfxVol).connect(mainOut);
   master = ctx.createGain();
   master.connect(out);
   master.out = out;
@@ -386,7 +403,7 @@ export const sound = {
   bus(name) { return buses[name] ?? null; },
   setBusVolume(name, v) {
     busVolume[name] = Math.max(0, Math.min(1, v));
-    buses[name]?.gain.setTargetAtTime(busVolume[name], ctx.currentTime, 0.05);
+    setGain(buses[name], curve(busVolume[name]));
   },
   play(name, opts) {
     if (muted || !ctx || ctx.state !== 'running' || !SOUNDS[name]) return;
@@ -401,12 +418,12 @@ export const sound = {
     muted = v;
     try { localStorage.setItem(STORE_KEY, v ? '1' : '0'); } catch { /* не сохранилось — не страшно */ }
     if (v) sound.stopAll();
-    if (mainOut) mainOut.gain.setTargetAtTime(v ? 0 : 1, ctx.currentTime, 0.02);
+    setGain(mainOut, v ? 0 : 1);
     for (const fn of unlockers) fn();
   },
   get volume() { return volume; },
   setVolume(v) {
     volume = Math.max(0, Math.min(1, v));
-    if (master) master.out.gain.setTargetAtTime(MASTER * volume, ctx.currentTime, 0.02);
+    setGain(sfxVol, curve(volume));
   },
 };

@@ -537,3 +537,20 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 .lobby-actions { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
 .lobby-start { font-size: 26px; padding: 8px 40px; }
 .net-toast { position: absolute; top: 88px; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 8px; background: rgba(26, 3, 6, 0.85); border: 2px solid #1a0306; font-size: 14px; font-weight: 600; pointer-events: none; z-index: 5; white-space: nowrap; }
+
+/* ---- громкость ---- */
+.vol-pct { width: 34px; text-align: right; font-size: 14px; opacity: 0.8; }
+.set-row input[type=range] { height: 28px; }
+.vol-toggle {
+  position: absolute; top: max(10px, env(safe-area-inset-top)); right: calc(max(14px, env(safe-area-inset-right)) + 52px);
+  width: 44px; height: 40px; font-size: 20px; cursor: pointer; z-index: 6;
+  background: linear-gradient(180deg, var(--red-500), var(--red-700)); border: 2px solid var(--red-900);
+  border-radius: 10px; box-shadow: 0 3px 0 var(--red-900); color: var(--ink);
+}
+.vol-panel {
+  position: absolute; top: 60px; right: max(8px, env(safe-area-inset-right)); z-index: 7;
+  width: min(360px, calc(100% - 16px)); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.vol-panel .set-row { font-size: 16px; }
+.vol-panel-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; text-transform: uppercase; }
+.set-row > span:first-child { min-width: 84px; }

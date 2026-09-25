@@ -69,6 +69,19 @@ export const voice = {
     });
   },
 
+  /** Пример голоса для ползунка громкости: реплика героя, а если у него нет файлов — другого. */
+  preview(hero, fallbacks = []) {
+    const ctx = sound.context();
+    if (!ctx || sound.muted) return;
+    const list = [hero, ...fallbacks].filter(Boolean);
+    const next = (i) => {
+      if (i >= list.length) return;
+      load(`${voiceOf(list[i])}_select`).then((buf) => (buf ? voice.play(list[i], 'select') : next(i + 1)));
+    };
+    voice.stop();
+    next(0);
+  },
+
   stop() {
     try { current?.src.stop(); } catch { /* уже закончилась */ }
     current = null;
