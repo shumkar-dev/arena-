@@ -154,16 +154,18 @@ export default function App() {
 
   const play = () => { setRound((r) => r + 1); setView('arena'); };
 
+  const audio = { prefs, onChange: update, muted };
+
   let body;
   if (view === 'arena-net' && netGame) {
     body = (
       <Arena key={`net-${netGame.n}`} modeId="online" heroId={netGame.roster[netGame.you].hero} options={netOptions} debug={debug}
-        onExit={leaveNet} onAgain={() => setView('friend')} againLabel="В комнату" reward={netReward} notice={netNotice} toast={netToast} />
+        onExit={leaveNet} onAgain={() => setView('friend')} againLabel="В комнату" reward={netReward} notice={netNotice} toast={netToast} audio={audio} />
     );
   } else if (view === 'friend') {
     body = <FriendPlay net={net} lobby={lobby} heroId={prefs.heroId} playerName={playerName} ducks={ducks} onLeave={() => { net.leave(); setLobby(null); }} onBack={toMenu} />;
   } else if (view === 'arena') {
-    body = <Arena key={`${prefs.modeId}-${prefs.heroId}-${round}`} modeId={prefs.modeId} heroId={prefs.heroId} options={options} debug={debug} onExit={toMenu} onAgain={again} onResult={onResult} />;
+    body = <Arena key={`${prefs.modeId}-${prefs.heroId}-${round}`} modeId={prefs.modeId} heroId={prefs.heroId} options={options} debug={debug} onExit={toMenu} onAgain={again} onResult={onResult} audio={audio} />;
   } else if (view === 'modes') {
     body = <ModeSelect modeId={prefs.modeId} onPick={(id) => { update({ modeId: id }); setView('main'); }} onBack={toMenu} />;
   } else if (view === 'heroes') {

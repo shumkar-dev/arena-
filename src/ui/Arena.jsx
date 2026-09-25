@@ -4,19 +4,22 @@ import { heroById } from '../heroes/index.js';
 import Joystick from './Joystick.jsx';
 import ActionButtons from './ActionButtons.jsx';
 import MatchResult from './MatchResult.jsx';
+import VolumeSliders from './VolumeSliders.jsx';
 
 // клавиатура — только для отладки на компьютере; H — ударить себя (проверка смерти)
 const KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
 
 // Экран боя: 3D-арена, джойстик, кнопки, счёт режима, итог матча.
 // reward — утки, если их считает не onResult, а сетевой итог (App); toast — короткое сообщение сверху
-export default function Arena({ modeId, heroId, options, debug, onExit, onAgain, onResult, againLabel, reward: rewardProp, notice, toast }) {
+// audio — { prefs, onChange, muted }: ползунки громкости прямо в бою (кнопка ⚙, бой не останавливается)
+export default function Arena({ modeId, heroId, options, debug, onExit, onAgain, onResult, againLabel, reward: rewardProp, notice, toast, audio }) {
   const hero = heroById(heroId);
   const mountRef = useRef(null);
   const input = useRef({ moveX: 0, moveY: 0, attack: false, ult: false, ultAim: null, ultFire: null }).current;
   const [hud, setHud] = useState({ ultCd: 0, ultFrac: 0, ultActive: false, combo: 0, special: false, ultAim: 'tap', dead: false, respawnIn: 0 });
   const reported = useRef(false);
-  const [reward, setReward] = useState(null);   // сколько уток дал матч (рейтинг)
+  const [reward, setReward] = useState(null);
+  const [volOpen, setVolOpen] = useState(false);   // сколько уток дал матч (рейтинг)
 
   useEffect(() => {
     const game = createGame(mountRef.current, input, setHud, { modeId, heroId, ...options });
@@ -86,6 +89,18 @@ export default function Arena({ modeId, heroId, options, debug, onExit, onAgain,
       )}
       {hud.ping != null && <div className="net-ping">📶 {hud.ping} мс</div>}
       {toast && <div className="net-toast">{toast}</div>}
+      {audio && (
+        <button className="vol-toggle" onClick={() => setVolOpen((v) => !v)} aria-label="Громкость">⚙️</button>
+      )}
+      {audio && volOpen && (
+        <div className="vol-panel bs-panel">
+          <div className="vol-panel-head">
+            <span>Громкость</span>
+            <button className="bs-btn bs-btn-small" onClick={() => setVolOpen(false)} aria-label="Закрыть">✕</button>
+          </div>
+          <VolumeSliders prefs={audio.prefs} onChange={audio.onChange} muted={audio.muted} heroId={heroId} />
+        </div>
+      )}
       {notice && (
         <div className="result lose">
           <div className="result-box">
