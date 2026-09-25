@@ -12,7 +12,7 @@ import { modeById } from '../src/modes/index.js';
 import { rewardFor, botSkill } from '../src/rating/ranks.js';
 import {
   TICK, CODE_ALPHABET, NAME_MAX,
-  validHero, decodeCmd, encodeFighter, encodePickups, createOnlineMode,
+  validHero, decodeCmd, packFighter, diffFighter, encodePickups, createOnlineMode, SNAP_RATE,
   onlineModeId, slotsOf, teamOfSlot,
 } from '../src/net/protocol.js';
 
@@ -30,6 +30,13 @@ const ROOM_IDLE_MAX = 20 * 60;        // комната без боя живёт
 const STOP_AFTER_END = 3;             // после конца матча ещё 3 с считаем (добегают анимации), потом — снова лобби
 const MAX_MSGS_PER_SEC = 150;
 const LAG_MS = Number(process.env.LAG_MS) || 0;   // для проверки: искусственная задержка в каждую сторону
+const SNAP_EVERY = Math.round(TICK / SNAP_RATE);  // снимок — каждый 2-й шаг боя (15 раз в секунду)
+// Игрок не успевает принимать (мобильный интернет): не добавляем снимки в очередь, а пропускаем —
+// следующий всё равно несёт все изменения. Признаки: он подтвердил снимок, отставший больше чем
+// на MAX_BEHIND, или у сокета скопилось больше MAX_BUFFER байт.
+const MAX_BEHIND = 20;
+const MAX_BUFFER = 24 * 1024;
+const MAX_PENDING_EVENTS = 150;
 
 // на сервере ничего не рисуется: сцена-заглушка и эффекты-пустышки
 const noop = new Proxy(function () {}, { get: () => noop, apply: () => noop });
@@ -177,6 +184,9 @@ function createRoom(code, initialMode) {
       room.skill = botSkill(ducks.reduce((a, b) => a + b, 0) / Math.max(1, ducks.length));
       room.heroes = room.match.fighters.filter((f) => f.kit);
       room.controllers = new Map();
+      room.tickN = 0;
+      room.startedAt = Date.now();
+      for (const p of room.humans()) Object.assign(p, { base: [], snapN: 0, ackSnap: 0, pendingEv: [], lastSc: '', lastPk: '', skipped: 0, sentBytes: 0 });
       room.heroes.forEach((f, i) => {
         const p = room.slots[i];
         if (p) {
@@ -214,29 +224,60 @@ function createRoom(code, initialMode) {
       m.events.length = 0;
       fighters.forEach((f, i) => {
         if (!f.kit) return;
-        if (f.cmd?.attack !== undefined) ev.push(['a', i, f.cmd.attack ? [f.cmd.attack.x, f.cmd.attack.z] : 0]);
-        if (f.cmd?.ult !== undefined) ev.push(['u', i, f.cmd.ult ? [f.cmd.ult.x, f.cmd.ult.z] : 0]);
+        // удар: ['a', i] — автоприцел, ['a', i, угол×100]; ульта: ['u', i] или ['u', i, x см, z см]
+        const at = f.cmd?.attack, ul = f.cmd?.ult;
+        if (at !== undefined) ev.push(at ? ['a', i, Math.round(Math.atan2(at.x, at.z) * 100)] : ['a', i]);
+        if (ul !== undefined) ev.push(ul ? ['u', i, Math.round(ul.x * 100), Math.round(ul.z * 100)] : ['u', i]);
       });
 
-      const snap = {
-        t: 's',
-        tm: Math.round(m.world.time * 1000) / 1000,
-        f: fighters.map((f) => encodeFighter(f, fighters)),
-        ev,
-      };
-      if (m.state.kills) snap.sc = m.state.kills;
-      if (m.world.pickups.spots.length) snap.pk = encodePickups(m.world.pickups.spots);
-      for (const p of room.humans()) send(p.ws, { ...snap, ack: p.input?.ack ?? 0 });
+      // события копятся у каждого игрока до его ближайшего снимка (ни одно не теряется)
+      for (const p of room.humans()) {
+        p.pendingEv.push(...ev);
+        if (p.pendingEv.length > MAX_PENDING_EVENTS) p.pendingEv.splice(0, p.pendingEv.length - MAX_PENDING_EVENTS);
+      }
 
-      if (m.result && room.endT === 0) {
+      room.tickN += 1;
+      const finishing = m.result && room.endT === 0;
+      if (room.tickN % SNAP_EVERY === 0 || finishing) {
+        const packed = fighters.map((f) => packFighter(f, fighters));
+        const sc = m.state.kills ? JSON.stringify(m.state.kills) : '';
+        const pk = m.world.pickups.spots.length ? encodePickups(m.world.pickups.spots) : '';
+        const tm = Math.round(m.world.time * 1000);
+        for (const p of room.humans()) room.sendSnap(p, packed, sc, pk, tm, finishing);
+      }
+
+      if (finishing) {
         room.endT = DT;
         const base = modeById(modeId);
         const res = matchParticipants(m, m.result).map(({ win, place, topKills }) => ({
           win, place, topKills, delta: rewardFor({ modeId: base.id, win, place, topKills }),
         }));
         for (const p of room.humans()) send(p.ws, { t: 'end', winners: m.result.winners, reason: m.result.reason ?? '', res });
-        log(`room ${code}: end ${m.result.reason ?? ''}`);
+        const secs = Math.max(1, (Date.now() - room.startedAt) / 1000);
+        const stat = room.humans().map((p) => `${p.name}: ${(p.sentBytes / secs / 1024).toFixed(1)} КБ/с, пропущено ${p.skipped}`).join('; ');
+        log(`room ${code}: end ${m.result.reason ?? ''} | ${stat}`);
       }
+    },
+
+    // снимок одному игроку: только то, что изменилось с его прошлого снимка
+    sendSnap(p, packed, sc, pk, tm, force) {
+      if (!force && (p.snapN - p.ackSnap > MAX_BEHIND || p.ws.bufferedAmount > MAX_BUFFER)) { p.skipped += 1; return; }
+      const deltas = [];
+      packed.forEach((cur, i) => {
+        const d = diffFighter(p.base[i], cur);
+        if (d) deltas.push([i, ...d]);
+      });
+      p.base = packed;
+      const extra = {};
+      if (sc && sc !== p.lastSc) { extra.sc = JSON.parse(sc); p.lastSc = sc; }
+      if (pk && pk !== p.lastPk) { extra.pk = pk; p.lastPk = pk; }
+      p.snapN += 1;
+      const msg = [1, p.snapN, tm, p.input?.ack ?? 0, deltas, p.pendingEv];
+      if (extra.sc || extra.pk) msg.push(extra);
+      p.pendingEv = [];
+      const data = JSON.stringify(msg);
+      p.sentBytes += data.length;
+      send(p.ws, data);
     },
 
     toLobby() {
@@ -292,6 +333,7 @@ function onMessage(ws, msg) {
       if (!p?.input || !Number.isFinite(msg.s) || msg.s <= p.input.seq) return;
       const cmd = decodeCmd(msg);
       p.input.seq = msg.s;
+      if (Number.isFinite(msg.k) && msg.k > p.ackSnap) p.ackSnap = Math.min(msg.k, p.snapN);
       p.input.move = { moveX: cmd.moveX, moveZ: cmd.moveZ, aimDir: cmd.aimDir };
       if ('attack' in cmd && p.input.attacks.length < 4) p.input.attacks.push(cmd.attack);
       if ('ult' in cmd && p.input.ults.length < 2) p.input.ults.push(cmd.ult);
@@ -346,7 +388,8 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
   res.end(`arena server ok, rooms: ${rooms.size}\n`);
 });
-const wss = new WebSocketServer({ server, maxPayload: 4096 });
+// permessage-deflate: одинаковые куски снимков (скобки, номера полей) сжимаются в разы
+const wss = new WebSocketServer({ server, maxPayload: 4096, perMessageDeflate: { threshold: 64, zlibDeflateOptions: { level: 4 } } });
 
 wss.on('connection', (ws) => {
   ws.alive = true;

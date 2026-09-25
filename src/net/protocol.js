@@ -12,14 +12,17 @@ import { modeById } from '../modes/index.js';
 //   hero   { hero }                    сменить своего героя в лобби (и между боями)
 //   team   { team }                    перейти в команду (2 на 2: blue | red)
 //   start                              создатель комнаты начинает бой (пустые места — боты)
-//   in     { s, mx, mz, ad?, a?, u? }   команда бойца (encodeCmd), s — номер по порядку
+//   in     { s, k, mx, mz, ad?, a?, u? } команда бойца (encodeCmd), s — номер по порядку,
+//                                      k — последний полученный снимок; шлётся при изменении (до 20 раз/с), но не реже 10 раз/с
 //   leave                              выйти из комнаты
 //   ping   { c }                       замер пинга (ответ: pong { c })
 //
 // Сервер → игра
 //   lobby  { code, mode, you, host, slots: [{ name, hero } | null] }   комната до боя и после
 //   start  { mode, you, host, roster: [{ name, hero, bot }] }          бой начался; you — твоё место
-//   s      { tm, ack, f: [бойцы], ev: [события], sc?, pk? }            снимок 30 раз в секунду
+//   [1, n, tm, ack, [изменения бойцов], [события], extra?]            снимок 15 раз в секунду (массив, не объект):
+//          n — номер снимка, tm — время сервера в мс, ack — последняя применённая команда игрока,
+//          изменения — [номер, маска, ...поля] (packFighter/diffFighter), extra — { sc?, pk? } при изменениях
 //   end    { winners, reason, res: [{ win, place, topKills, delta }] } итог по героям, delta — утки
 //   left   { name }                    игрок вышел из боя — дальше за него играет бот
 //   err    { msg }                     ошибка (нет комнаты, занята…)
@@ -39,18 +42,20 @@ export const onlineModeId = (id) => (ONLINE_MODES.includes(id) ? id : 'duel');
 export const slotsOf = (modeId) => modeById(modeId).slots ?? 2;
 export const teamOfSlot = (modeId, i) => modeById(modeId).teamOf?.(i) ?? String(i);
 
-const r3 = (v) => Math.round(v * 1000) / 1000;
 
 export const validHero = (id) => (HEROES.some((h) => h.id === id) ? id : HEROES[0].id);
 
 // ---------- команда бойца ----------
 // { moveX, moveZ, aimDir, attack?, ult? } ↔ { mx, mz, ad, a, u }
 // attack / ult: 0 — без направления (автоприцел), [x, z] — направление или точка
-const vec = (v) => (v ? [r3(v.x), r3(v.z)] : 0);
+const vec = (v) => (v ? [Math.round(v.x * 100) / 100, Math.round(v.z * 100) / 100] : 0);
 const unvec = (a) => (Array.isArray(a) && a.length === 2 && a.every(Number.isFinite) ? { x: a[0], z: a[1] } : null);
 
-export function encodeCmd(cmd, seq) {
-  const m = { t: 'in', s: seq, mx: r3(cmd.moveX || 0), mz: r3(cmd.moveZ || 0) };
+// k — номер последнего снимка, который дошёл до игрока: по нему сервер не шлёт
+// новые снимки в забитый канал (см. server/index.js)
+export function encodeCmd(cmd, seq, lastSnap = 0) {
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const m = { t: 'in', s: seq, k: lastSnap, mx: r2(cmd.moveX || 0), mz: r2(cmd.moveZ || 0) };
   if (cmd.aimDir) m.ad = vec(cmd.aimDir);
   if (cmd.attack !== undefined) m.a = vec(cmd.attack);
   if (cmd.ult !== undefined) m.u = vec(cmd.ult);
@@ -68,27 +73,70 @@ export function decodeCmd(m) {
   return cmd;
 }
 
-// ---------- состояние бойца в снимке ----------
-// Для героев — всё; для бутылок и прохожих — только позиция, ХП и жив ли.
-export function encodeFighter(f, fighters) {
-  const o = {
-    x: r3(f.pos.x), z: r3(f.pos.z), fa: r3(f.facing),
-    hp: f.hp, al: f.alive ? 1 : 0,
-    rs: Number.isFinite(f.respawnIn) ? r3(f.respawnIn) : -1,
+// ---------- состояние бойца в снимке: компактно и только изменения ----------
+// Боец — массив целых чисел (координаты в сантиметрах, углы в сотых радиана):
+//   [x, z, facing, hp, alive, respawnIn×10, lift, grabbedBy, kills, moveX, moveZ, aimAngle, effects]
+// effects — строка «имя:секунды[:множитель×100]» через запятую (меняется раз в секунду, не каждый шаг).
+// В снимке идёт не всё, а только поля, которые изменились с прошлого снимка этому игроку:
+//   [номер бойца, маска изменённых полей, ...значения]. Стоит на месте — не передаётся вовсе.
+export const SNAP_RATE = 15;             // снимков в секунду каждому игроку (бой считается 30 раз в секунду)
+const NO_AIM = -999;
+const FIELD_COUNT = 13;
+const q = (v) => Math.round(v * 100);
+
+function packEffects(effects) {
+  return Object.keys(effects).sort().map((k) => {
+    const e = effects[k];
+    return e.mul != null ? `${k}:${Math.ceil(e.t)}:${Math.round(e.mul * 100)}` : `${k}:${Math.ceil(e.t)}`;
+  }).join(',');
+}
+
+export function packFighter(f, fighters) {
+  const kit = !!f.kit;
+  return [
+    q(f.pos.x), q(f.pos.z), q(f.facing), f.hp, f.alive ? 1 : 0,
+    Number.isFinite(f.respawnIn) ? Math.round(f.respawnIn * 10) : -1,
+    q(f.lift), f.grabbedBy ? fighters.indexOf(f.grabbedBy) : -1,
+    kit ? f.kills : 0,
+    kit ? q(f.cmd?.moveX ?? 0) : 0, kit ? q(f.cmd?.moveZ ?? 0) : 0,     // чем управляют бойцом — для анимации у других
+    kit && f.cmd?.aimDir ? q(Math.atan2(f.cmd.aimDir.x, f.cmd.aimDir.z)) : NO_AIM,
+    packEffects(f.effects),
+  ];
+}
+
+/** Что изменилось: [маска, ...значения] или null, если ничего. prev = null — всё (первый снимок). */
+export function diffFighter(prev, cur) {
+  let mask = 0;
+  const vals = [];
+  for (let i = 0; i < FIELD_COUNT; i++) {
+    if (!prev || prev[i] !== cur[i]) { mask |= 1 << i; vals.push(cur[i]); }
+  }
+  return mask ? [mask, ...vals] : null;
+}
+
+/** Применить изменения к сохранённому массиву бойца (на устройстве). */
+export function applyFighterDiff(arr, mask, vals) {
+  let j = 0;
+  for (let i = 0; i < FIELD_COUNT; i++) if (mask & (1 << i)) arr[i] = vals[j++];
+  return arr;
+}
+
+/** Массив бойца → понятный объект для синхронизации. */
+export function unpackFighter(a) {
+  const e = {};
+  if (a[12]) {
+    for (const part of a[12].split(',')) {
+      const [k, t, mul] = part.split(':');
+      e[k] = mul != null ? { t: Number(t), mul: Number(mul) / 100 } : { t: Number(t) };
+    }
+  }
+  return {
+    x: a[0] / 100, z: a[1] / 100, fa: a[2] / 100, hp: a[3], al: a[4],
+    rs: a[5] < 0 ? -1 : a[5] / 10, l: a[6] / 100, g: a[7], k: a[8],
+    m: [a[9] / 100, a[10] / 100],
+    ad: a[11] === NO_AIM ? null : [Math.sin(a[11] / 100), Math.cos(a[11] / 100)],
+    e,
   };
-  if (f.lift) o.l = r3(f.lift);
-  if (f.grabbedBy) o.g = fighters.indexOf(f.grabbedBy);
-  const keys = Object.keys(f.effects);
-  if (keys.length) {
-    o.e = {};
-    for (const k of keys) o.e[k] = { ...f.effects[k], t: r3(f.effects[k].t) };
-  }
-  if (f.kit) {
-    o.k = f.kills;
-    o.m = [r3(f.cmd?.moveX ?? 0), r3(f.cmd?.moveZ ?? 0)];   // чем сейчас управляют бойцом — для анимации у других
-    if (f.cmd?.aimDir) o.ad = vec(f.cmd.aimDir);
-  }
-  return o;
 }
 
 // предметы на карте: '1' — лежит, '0' — подобран и ждёт появления
