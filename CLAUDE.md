@@ -6,7 +6,7 @@
 Мобильная 3D-арена для игры с друзьями в стиле Brawl Stars: блочная графика, телефон в горизонтали, тёмно-красное меню.
 - Стек: React 18 + three.js + Vite; PWA. Игра: https://shumkar-dev.github.io/arena-/ (репозиторий `shumkar-dev/arena-`, `base: '/arena-/'`).
 - Герои (по папке на героя, `src/heroes/<id>/`: `model.js`, `kit.js`, `index.js`): Шаба, Смитана, Чёрный Изюм, Гаргашмель, Горилла (`gorilla`, танк). Реестр собирается через `import.meta.glob`. Необязательные поля героя: `voice`, `radius`/`headY` (крупный герой), `stride`, `sounds.death`; у бота — `ult.recast` (второе нажатие ульты).
-- Режимы (`src/modes/<id>.js`): `duel` (1 на 1, до 3 убийств), `teams` (2 на 2, бутылки «Султан чая», сигареты), `ffa` (каждый сам за себя в парке, прохожие, аптечки), `training`. Карты — `src/maps/` (дорога, парк).
+- Режимы (`src/modes/<id>.js`): `duel` (1 на 1, до 3 убийств, две аптечки), `teams` (2 на 2, бутылки «Султан чая», сигареты), `ffa` (каждый сам за себя в парке, прохожие, аптечки), `training`. Карты — `src/maps/` (дорога, парк).
 - Боты (`src/game/bot.js`): 10 ботов с игровыми никами, сила растёт со званием игрока (`botSkill`).
 - Рейтинг — утки и звания строго по GDD (`src/rating/ranks.js`); таблица в Supabase (`src/rating/store.js`, `docs/supabase.sql`), без ключей — на устройстве.
 - Звук: процедурные звуки (`sound.js`), голоса героев (`voice.js`, `public/voices/<голос>_<событие>.mp3`), музыка (`music.js`, `public/music/`). Три канала громкости; музыка — фон (−9 дБ, приглушается под реплики).
@@ -38,7 +38,7 @@
   Журнал: `docker logs --tail 30 arena-server` (в конце матча — КБ/с и пропуски снимков на игрока). Caddy при обновлении трогать не нужно.
 
 ## Разработка и проверка
-- `npm run dev`, `npm run build`, `npm run build:server`, `npm run server` (сервер на :3001), `npm run balance`.
+- `npm run dev`, `npm run build`, `npm run build:server`, `npm run server` (сервер на :3001), `npm run balance`, `npm run sim` (дуэли ботов без картинки: `-- gorilla 40` — пары с гориллой, `-- sizes` — габариты моделей, `-- gaps` — узкие проходы; `SIM_SET='{"gorilla":{…}}'` — примерить числа).
 - Параметры адреса: `?mode=`, `?hero=`, `?bot=`, `?dummy`, `?autoplay`, `?fast=N`, `?debug` (`window.__game`), `?ws=ws://localhost:3001`.
 - Сервер: `LAG_MS=100` — искусственная задержка в каждую сторону.
 - Тесты — через `playwright-core` с `/opt/pw-browsers/chromium` (`--use-gl=angle --use-angle=swiftshader`); без лишних долгих автотестов, пользователь просит короткие проверки.

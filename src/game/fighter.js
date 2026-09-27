@@ -28,7 +28,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
   const mats = [...matSet].map((m) => ({ m, base: m.emissive.clone() }));
 
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(0.62, 0.78, 32),
+    new THREE.RingGeometry(0.62 * (radius / 0.5), 0.78 * (radius / 0.5), 32),   // по размеру хитбокса
     new THREE.MeshBasicMaterial({ color: RING_COLORS[side] ?? 0xff4a4a, transparent: true, opacity: 0.85 })
   );
   ring.rotation.x = -Math.PI / 2;

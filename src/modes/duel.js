@@ -2,11 +2,16 @@ import { ARENA } from '../game/arena.js';
 import { rosterOf, sideFor, creditKill } from './common.js';
 
 // ============================================================
-// 1 НА 1 — ДУЭЛЬ. Бой до 3 убийств, без аптечек и усилителей.
-// Карта — дорога с укрытиями.
+// 1 НА 1 — ДУЭЛЬ. Бой до 3 убийств. Карта — дорога с укрытиями.
+// Две аптечки на средней линии по краям дороги — симметрично, до каждой
+// одинаково далеко от обоих стартов. Лечат долю максимального ХП, появляются снова
+// через MEDKIT_RESPAWN секунд. Усилителей нет.
 // ============================================================
 
 const KILLS_TO_WIN = 3;
+const MEDKITS = [[-5, 0], [5, 0]];
+const MEDKIT_HEAL = 0.3;        // доля максимального ХП
+const MEDKIT_RESPAWN = 20;      // с
 const TEAMS = ['blue', 'red'];
 
 export default {
@@ -14,7 +19,7 @@ export default {
   order: 1,
   name: '1 на 1',
   title: 'Дуэль',
-  about: `Бой до ${KILLS_TO_WIN} убийств. Без аптечек и усилителей — чистая драка.`,
+  about: `Бой до ${KILLS_TO_WIN} убийств. Две аптечки на середине дороги — за них стоит драться.`,
   icon: '⚔️',
   map: 'road',
 
@@ -28,6 +33,7 @@ export default {
     roster.forEach((r, i) => match.addHero(r.heroId, {
       name: r.name, team: TEAMS[i], control: r.control, side: sideFor(i, you, (j) => TEAMS[j]), spawn: spawns[i],
     }));
+    for (const [x, z] of MEDKITS) match.addPickup('medkit', x, z, MEDKIT_RESPAWN, { healFrac: MEDKIT_HEAL });
     match.state = { kills: { blue: 0, red: 0 } };
   },
 

@@ -11,31 +11,31 @@ import { createChain, aimAttack, faceTowards, enemiesInCone, enemiesInRadius, hi
 // ============================================================
 
 export const GORILLA = {
-  maxHp: 5600,
+  maxHp: 5400,
   speed: 5.0,
-  punchDamage: 650,
+  punchDamage: 580,
   punchTime: 0.36,       // длительность удара, с
   punchHitAt: 0.45,      // доля удара, когда засчитывается попадание
-  punchReach: 1.2,       // досягаемость сверх радиусов обоих бойцов
+  punchReach: 1.1,       // досягаемость сверх радиусов обоих бойцов (сама горилла шире — радиус 0,78)
   punchArc: 1.2,         // ±рад — конус перед собой
   attackCooldown: 0.42,
   autoAim: 3.6,
   throwLunge: 0.28,      // рывок к врагу перед броском, с
-  throwReach: 1.3,
+  throwReach: 1.2,
   throwHold: 0.22,       // держит над головой перед броском, с
-  throwDamage: 400,
-  throwDist: 5,          // на сколько метров отлетает враг
-  throwTime: 0.4,        // сколько летит, с
+  throwDamage: 300,
+  throwDist: 4,          // на сколько метров отлетает враг
+  throwTime: 0.35,       // сколько летит (и не управляется), с
   ultCooldown: 22,       // считается с рёва (5 с ускорения входят в него)
   ultDuration: 5,
-  ultSpeedMul: 1.35,
+  ultSpeedMul: 1.3,
   roarTime: 0.6,         // рёв и удары в грудь — стоит на месте
   jumpRange: 7,
   jumpTime: 0.55,
   jumpHeight: 2.2,
-  jumpDamage: 1300,
-  jumpRadius: 2.6,
-  jumpKnock: 3.5,        // отброс от центра приземления, м
+  jumpDamage: 1000,
+  jumpRadius: 2.4,
+  jumpKnock: 3,          // отброс от центра приземления, м
 };
 
 export function createGorillaKit(me) {
@@ -217,7 +217,7 @@ export function createGorillaKit(me) {
           v.pos.z = me.pos.z + Math.cos(me.facing) * d;
           v.facing = me.facing + Math.PI;
         }
-        v.lift = 0.3 + 1.1 * Math.min(1, s.actionT);
+        v.lift = 0.4 + 1.5 * Math.min(1, s.actionT);
         if (s.actionT >= 1) {
           // швырок в сторону прицела
           release();
