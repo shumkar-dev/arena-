@@ -102,7 +102,7 @@ export function createGame(mount, input, onHud, options = {}) {
   const talk = !options.autoplay;
   const hero = player.hero;
   if (talk) voice.preload(hero);
-  const vs = { started: false, attacks: 0, nextAttack: 3, lastHurt: -9, kills: player.kills, alive: true, ultCd: 0 };
+  const vs = { started: false, attacks: 0, nextAttack: 3, lastHurt: -9, kills: player.kills, alive: true, ultCd: 0, ultOn: false };
   const voiceHooks = () => {
     if (!talk || match.result) return;
     const t = match.world.time;
@@ -113,9 +113,12 @@ export function createGame(mount, input, onHud, options = {}) {
       vs.nextAttack = 3 + (Math.random() < 0.5 ? 0 : 1);
       voice.play(hero, 'attack');
     }
-    const cd = player.kit.hud().ultCd;
-    if (cd > vs.ultCd + 1) voice.play(hero, 'ult');     // перезарядка ульты началась — ульта сработала
-    vs.ultCd = cd;
+    // ульта сработала: началась перезарядка или включилось действие ульты
+    // (у гориллы второе нажатие — прыжок — внутри того же действия, реплика не повторяется)
+    const uh = player.kit.hud();
+    if (!vs.ultOn && (uh.ultCd > vs.ultCd + 1 || uh.ultActive)) voice.play(hero, 'ult');
+    vs.ultCd = uh.ultCd;
+    vs.ultOn = !!uh.ultActive;
     if (player.kills > vs.kills) voice.play(hero, 'kill');
     vs.kills = player.kills;
     if (vs.alive && !player.alive) voice.play(hero, 'death');
@@ -135,7 +138,7 @@ export function createGame(mount, input, onHud, options = {}) {
       } else if (e.type === 'heal') overlay.spawnNumber(e.target, `+${e.amount}`, 'heal');
       else if (e.type === 'say') overlay.spawnNumber(e.f, e.text, 'text');
       else if (e.type === 'sfx') sound.play(e.name, e.opts);
-      else if (e.type === 'death') sound.play('death');
+      else if (e.type === 'death') sound.play(e.victim?.hero?.sounds?.death ?? 'death');   // у гориллы — свой хрип
       else if (e.type === 'respawn') sound.play('respawn');
       else if (e.type === 'finish') {
         const win = e.result.winners.includes(player.team);

@@ -41,6 +41,14 @@ export function createMatch({ scene, fx, mode, options = {} }) {
       return dealt;
     },
     heal(f, amount) { if (amount > 0) events.push({ type: 'heal', target: f, amount }); },
+    // отбросить бойца: по направлению (dx, dz) на dist метров за time секунд; пока летит — не управляется
+    knock(target, dx, dz, dist, time = 0.35) {
+      if (!target.alive || target.isStatic || target.grabbedBy) return;
+      const len = Math.hypot(dx, dz) || 1;
+      const k = { vx: (dx / len) * dist / time, vz: (dz / len) * dist / time, t: time };
+      target.knock = k;
+      events.push({ type: 'knock', target, ...k });
+    },
     say(f, text) { events.push({ type: 'say', f, text }); },
     sfx(name, opts) { events.push({ type: 'sfx', name, opts }); },
   };
@@ -60,7 +68,10 @@ export function createMatch({ scene, fx, mode, options = {} }) {
      */
     addHero(heroId, { name, team, spawn, control = 'bot', side = 'enemy', respawns = true }) {
       const hero = heroById(heroId);
-      const f = createFighter({ name, team, model: hero.createModel(), maxHp: hero.stats.maxHp, spawn, side, respawns });
+      const f = createFighter({
+        name, team, model: hero.createModel(), maxHp: hero.stats.maxHp, spawn, side, respawns,
+        radius: hero.radius ?? 0.5, headY: hero.headY ?? 2.9,     // крупные герои (горилла) — шире и выше
+      });
       f.hero = hero;
       f.kit = hero.createKit(f);
       f.control = control;
@@ -138,7 +149,7 @@ export function createMatch({ scene, fx, mode, options = {} }) {
     for (let i = 0; i < fighters.length; i++) {
       for (let j = i + 1; j < fighters.length; j++) {
         const a = fighters[i], b = fighters[j];
-        if (!a.alive || !b.alive || a.grabbedBy === b || b.grabbedBy === a) continue;
+        if (!a.alive || !b.alive || a.grabbedBy === b || b.grabbedBy === a || a.airborne || b.airborne) continue;
         const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
         const d = Math.hypot(dx, dz), min = a.radius + b.radius;
         if (d >= min || d < 1e-6) continue;
@@ -169,9 +180,19 @@ export function createMatch({ scene, fx, mode, options = {} }) {
     }
     mode.beforePhysics?.(match, dt);
 
-    // столкновения, скорость, шаг
+    // отброс: боец летит по инерции (world.knock)
+    for (const f of fighters) {
+      const k = f.knock;
+      if (!k || k.t <= 0 || !f.alive) continue;
+      const step = Math.min(dt, k.t);
+      f.pos.x += k.vx * step;
+      f.pos.z += k.vz * step;
+      k.t -= dt;
+    }
+
+    // столкновения, скорость, шаг (кто в прыжке — над укрытиями и бойцами)
     separate();
-    for (const f of fighters) if (f.alive && !f.grabbedBy && !f.isStatic) resolveCollisions(f.pos, f.radius);
+    for (const f of fighters) if (f.alive && !f.grabbedBy && !f.isStatic && !f.airborne) resolveCollisions(f.pos, f.radius);
     for (const f of fighters) {
       if (!f.kit) continue;
       f.stride += f.before.distanceTo(f.pos) * f.hero.stride / (f.kit.speedMul > 1.3 ? 1.22 : 1);

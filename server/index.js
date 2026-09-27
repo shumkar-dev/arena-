@@ -220,6 +220,8 @@ function createRoom(code, initialMode) {
         if (e.type === 'damage') ev.push(['d', fighters.indexOf(e.target), e.amount, e.kind]);
         else if (e.type === 'heal') ev.push(['h', fighters.indexOf(e.target), e.amount]);
         else if (e.type === 'say') ev.push(['say', fighters.indexOf(e.f), e.text]);
+        // отброс: ['k', i, vx×100, vz×100, t×100] — на устройстве боец летит так же (предсказание своего)
+        else if (e.type === 'knock') ev.push(['k', fighters.indexOf(e.target), Math.round(e.vx * 100), Math.round(e.vz * 100), Math.round(e.t * 100)]);
       }
       m.events.length = 0;
       fighters.forEach((f, i) => {
