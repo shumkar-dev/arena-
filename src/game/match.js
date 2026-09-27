@@ -100,7 +100,7 @@ export function createMatch({ scene, fx, mode, options = {} }) {
     },
 
     // предмет на карте: 'cig' — усилитель, 'medkit' — аптечка
-    addPickup(kind, x, z, respawn) { return pickups.add(kind, x, z, respawn); },
+    addPickup(kind, x, z, respawn, opts) { return pickups.add(kind, x, z, respawn, opts); },
 
     finish(result) {
       if (!match.result) {

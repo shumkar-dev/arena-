@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "balance": "node scripts/balance.mjs",
+    "sim": "vite build --config scripts/sim.config.js --logLevel warn && node scripts/dist/sim.js",
     "build:server": "vite build --config server/vite.config.js",
     "server": "npm run build:server && node server/dist/index.js"
   },

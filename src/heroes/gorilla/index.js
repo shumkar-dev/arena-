@@ -12,9 +12,9 @@ export default {
   // файлы озвучки: public/voices/gorilla_<событие>.mp3
   icons: { attack: '👊', special: '🦍' },
   stats: S,
-  radius: 0.62,            // крупнее остальных
-  headY: 3.0,
-  stride: 1.4,             // галоп на костяшках — шаг длиннее
+  radius: 0.78,           // заметно крупнее остальных (у них 0.5); все проходы на картах ≥ 1,6 м — npm run sim -- gaps
+  headY: 4.2,
+  stride: 1.1,             // галоп на костяшках: ноги длиннее — шаг реже
   sounds: { death: 'gorillaDeath' },
   createModel: createGorilla,
   createKit: createGorillaKit,
