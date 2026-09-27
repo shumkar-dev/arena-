@@ -313,6 +313,13 @@ export function createBot(me, opts = {}) {
         stats.ults += 1;
         return cmd;
       }
+      // второе нажатие ульты (прыжок гориллы): пока окно открыто и враг в досягаемости
+      const re = prof.ult.recast;
+      if (re && hud.ultActive && hud.ultCd <= 0 && d <= re.range && (d > prof.range || Math.random() < 0.3)) {
+        cmd.ult = leadPoint(enemy, (re.lead ?? 0) * sk.lead);
+        stats.ults += 1;
+        return cmd;
+      }
 
       // атака: только если достанет и путь чист — промах сбивает серию
       if (!hud.attackLocked && d <= prof.range) {

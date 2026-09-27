@@ -45,6 +45,8 @@ export function createNetSync({ match, player, net }) {
     return 0;
   };
   world.heal = () => {};
+  // отброс решает сервер (событие 'k'), здесь приём его только показывает
+  world.knock = () => {};
   // предметы подбирает сервер: здесь только показываем, какие лежат (pk в снимке)
   world.pickups.update = () => {};
   for (const f of fighters) f.netClient = true;
@@ -134,6 +136,11 @@ export function createNetSync({ match, player, net }) {
       }
       else if (e[0] === 'h') match.events.push({ type: 'heal', target: f, amount: e[2] });
       else if (e[0] === 'say') match.events.push({ type: 'say', f, text: e[2] });
+      else if (e[0] === 'k' && f.alive) {
+        f.knock = { vx: e[2] / 100, vz: e[3] / 100, t: e[4] / 100 };
+        // свой боец полетит здесь сам; старые предсказания (без отброса) сверять уже не с чем
+        if (f === player) { hist.length = 0; corr.x = corr.z = 0; }
+      }
       else if (e[0] === 'a' && f !== player) remotes.get(f)?.queue.push({ attack: e.length > 2 ? { x: Math.sin(e[2] / 100), z: Math.cos(e[2] / 100) } : null });
       else if (e[0] === 'u' && f !== player) remotes.get(f)?.queue.push({ ult: e.length > 2 ? { x: e[2] / 100, z: e[3] / 100 } : null });
     }

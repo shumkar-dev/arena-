@@ -312,7 +312,64 @@ const SOUNDS = {
     thump({ f0: 110, f1: 32, dur: 0.4, gain: 1.0, delay: 0.3, rev: 0.3, distort: true });
     noise({ f0: 900, f1: 90, dur: 0.35, gain: 0.45, delay: 0.3, rev: 0.3 });
   },
-  sprayStart() {                    // сметанамёт: «пфф» и густое шипение с бульканьем до sprayStop
+  gorillaGrunt() {                  // горилла бьёт: короткое утробное рычание
+    const t = ctx.currentTime;
+    const f = 62 + Math.random() * 14;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f * 1.3, t);
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.2);
+    const flt = ctx.createBiquadFilter(); flt.type = 'lowpass'; flt.Q.value = 6;
+    flt.frequency.setValueAtTime(700, t);
+    flt.frequency.exponentialRampToValueAtTime(260, t + 0.22);
+    const g = ctx.createGain(); envelope(g, t, 0.015, 0.24, 0.26);
+    o.connect(flt).connect(g);
+    route(g, { rev: 0.12, distort: true });
+    o.start(t); o.stop(t + 0.28);
+    noise({ filter: 'bandpass', f0: 480, f1: 220, q: 2, dur: 0.18, gain: 0.16 });   // выдох
+  },
+  gorillaRoar() {                   // ульта гориллы: рёв и частые удары в грудь
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(85, t);
+    o.frequency.linearRampToValueAtTime(125, t + 0.25);
+    o.frequency.exponentialRampToValueAtTime(70, t + 0.75);
+    const lfo = ctx.createOscillator(), lg = ctx.createGain();
+    lfo.frequency.value = 23; lg.gain.value = 10;                 // хрип в голосе
+    lfo.connect(lg).connect(o.frequency);
+    const g = ctx.createGain(); envelope(g, t, 0.05, 0.8, 0.34);
+    for (const [f, q, k] of [[420, 4, 1], [900, 5, 0.5], [1900, 6, 0.18]]) {
+      const b = ctx.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q;
+      const bg = ctx.createGain(); bg.gain.value = k;
+      o.connect(b).connect(bg).connect(g);
+    }
+    route(g, { rev: 0.3, distort: true });
+    o.start(t); lfo.start(t); o.stop(t + 0.85); lfo.stop(t + 0.85);
+    noise({ f0: 1100, f1: 350, dur: 0.7, att: 0.05, gain: 0.18, rev: 0.25 });
+    for (let i = 0; i < 6; i++) thump({ f0: 105, f1: 48, dur: 0.1, gain: 0.8, delay: 0.08 + i * 0.1, rev: 0.12 });
+  },
+  gorillaLand() {                   // приземление после прыжка: тяжёлый глухой удар о землю
+    thump({ f0: 90, f1: 24, dur: 0.7, gain: 1.0, rev: 0.35, distort: true });
+    noise({ f0: 1200, f1: 60, dur: 0.6, gain: 0.6, att: 0.005, rev: 0.4, distort: true });
+    noise({ filter: 'highpass', f0: 1800, dur: 0.2, gain: 0.12, delay: 0.04, rev: 0.3 });    // камешки
+  },
+  gorillaDeath() {                  // горилла выбыла: хрип и тяжёлое падение
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(95, t);
+    o.frequency.exponentialRampToValueAtTime(48, t + 0.7);
+    const lfo = ctx.createOscillator(), lg = ctx.createGain();
+    lfo.frequency.value = 17; lg.gain.value = 12;
+    lfo.connect(lg).connect(o.frequency);
+    const flt = ctx.createBiquadFilter(); flt.type = 'bandpass'; flt.frequency.value = 480; flt.Q.value = 2.5;
+    const g = ctx.createGain(); envelope(g, t, 0.04, 0.75, 0.3);
+    o.connect(flt).connect(g);
+    route(g, { rev: 0.3 });
+    o.start(t); lfo.start(t); o.stop(t + 0.8); lfo.stop(t + 0.8);
+    noise({ filter: 'bandpass', f0: 700, f1: 250, q: 1.5, dur: 0.6, att: 0.05, gain: 0.18 });   // хрип
+    thump({ f0: 90, f1: 28, dur: 0.6, gain: 1.0, delay: 0.45, rev: 0.35, distort: true });
+    noise({ f0: 800, f1: 80, dur: 0.6, gain: 0.45, delay: 0.45, rev: 0.4 });
+  },
+  sprayStart() {                  // сметанамёт: «пфф» и густое шипение с бульканьем до sprayStop
     thump({ f0: 160, f1: 55, dur: 0.18, gain: 0.7 });
     startLoop('spray', () => {
       const t = ctx.currentTime;

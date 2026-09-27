@@ -73,7 +73,7 @@ export function createNet(url = SERVER_URL) {
           setIssue(m.pv === PROTOCOL ? null : m.pv > PROTOCOL ? 'client' : 'server');
           return;
         }
-        if (m.t === 'err' && m.code === 'version') setIssue('client');
+        if (m.t === 'err' && m.code === 'version' && net.versionIssue !== 'server') setIssue('client');
         if (m.t === 'start') net.lastSnap = 0;   // у нового боя снимки считаются заново
         emit(m.t, m);
       };

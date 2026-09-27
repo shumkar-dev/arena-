@@ -67,7 +67,7 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
   f.hasEffect = (name) => (f.effects[name]?.t ?? 0) > 0;
   f.moveMul = () => (f.hasEffect('slow') ? f.effects.slow.mul : 1);
 
-  f.canAct = () => f.alive && !f.grabbedBy;
+  f.canAct = () => f.alive && !f.grabbedBy && !(f.knock?.t > 0);   // отброшенный не управляется, пока летит
 
   // лечение (аптечка); вернёт, сколько реально восстановлено
   f.heal = (amount) => {
@@ -96,6 +96,8 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
       f.respawnIn = f.respawns ? RESPAWN_TIME : Infinity;
       f.grabbedBy = null;
       f.lift = 0;
+      f.knock = null;
+      f.airborne = false;
       f.effects = {};
     }
     return dealt;
@@ -110,6 +112,8 @@ export function createFighter({ name, team, model, maxHp, spawn, radius = 0.5, h
     f.flash = 0;
     f.flinch = 0;
     f.grabbedBy = null;
+    f.knock = null;
+    f.airborne = false;
     f.effects = {};
     f.lastHitBy = null;
     wrapper.visible = true;
